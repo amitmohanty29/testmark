@@ -25,6 +25,10 @@ import { api } from '../../api';
 import { EnvironmentalPanel } from './EnvironmentalPanel';
 import { EvidenceAttachmentPanel } from './EvidenceAttachmentPanel';
 import { ShowMeWhyModal } from './ShowMeWhyModal';
+import { SelfHealingStatusBar } from './SelfHealingStatusBar';
+import { RestoreDraftModal } from './RestoreDraftModal';
+import { ConflictResolutionModal } from './ConflictResolutionModal';
+import { useSelfHealingTestState } from '../../hooks/useSelfHealingTestState';
 
 interface RepeatabilityModuleProps {
   evaluationId: string;
@@ -42,32 +46,58 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
   readOnly = false,
 }) => {
   const defaultNominal = Math.round(instrument.maxCapacity * 0.5 * 100) / 100;
-  const [nominalLoad, setNominalLoad] = useState<number>(
-    existingRecord?.testInputs?.nominalLoad || defaultNominal
-  );
 
-  const [environmentalData, setEnvironmentalData] = useState<EnvironmentalConditions>(
-    existingRecord?.environmentalData || {
+  // Self-healing state engine with immediate IndexedDB saving and offline resiliency
+  const {
+    observations: runs,
+    setObservations: setRuns,
+    environmentalData,
+    setEnvironmentalData,
+    testInputs,
+    setTestInputs,
+    notes,
+    setNotes,
+    syncStatus,
+    lastLocalSaveTime,
+    lastServerSyncTime,
+    showRestorePrompt,
+    localDraftCandidate,
+    conflictData,
+    setConflictData,
+    restoreLocalDraft,
+    discardLocalDraft,
+    resolveConflict,
+    syncNow,
+  } = useSelfHealingTestState({
+    evaluationId,
+    testType: 'REPEATABILITY',
+    existingRecord,
+    onRecordSaved,
+    readOnly,
+    initialEnvironmentalData: {
       temperatureCelsius: 22.0,
       relativeHumidity: 50,
       atmosphericPressureHpa: 1013,
       isInstrumentLevel: true,
       standardWeightsCertificate: 'NPL/MET/2026/F1-CLASS/9941',
       notes: 'Repeatability series performed on centered load receptor.',
-    }
-  );
+    },
+    initialTestInputs: {
+      nominalLoad: defaultNominal,
+      verificationType: 'INITIAL',
+    },
+  });
 
-  const [verificationType, setVerificationType] = useState<VerificationType>(
-    (existingRecord?.testInputs?.verificationType as VerificationType) || 'INITIAL'
-  );
+  const nominalLoad = testInputs?.nominalLoad || defaultNominal;
+  const setNominalLoad = (val: number) => {
+    setTestInputs((prev: any) => ({ ...prev, nominalLoad: val }));
+  };
 
-  const [runs, setRuns] = useState<RepeatabilityObservation[]>(
-    existingRecord?.observations && existingRecord.observations.length > 0
-      ? existingRecord.observations
-      : []
-  );
+  const verificationType = (testInputs?.verificationType as VerificationType) || 'INITIAL';
+  const setVerificationType = (val: VerificationType) => {
+    setTestInputs((prev: any) => ({ ...prev, verificationType: val }));
+  };
 
-  const [notes, setNotes] = useState<string>(existingRecord?.notes || '');
   const [complianceResult, setComplianceResult] = useState<TestComplianceResult | null>(
     existingRecord?.complianceDetails || null
   );
@@ -79,27 +109,10 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showMeWhyOpen, setShowMeWhyOpen] = useState(false);
 
-  // Sync state if existingRecord changes or is updated
+  // Sync compliance details if existingRecord changes
   useEffect(() => {
-    if (existingRecord) {
-      if (existingRecord.observations && existingRecord.observations.length > 0) {
-        setRuns(existingRecord.observations);
-      }
-      if (existingRecord.complianceDetails) {
-        setComplianceResult(existingRecord.complianceDetails);
-      }
-      if (existingRecord.notes !== undefined) {
-        setNotes(existingRecord.notes || '');
-      }
-      if (existingRecord.environmentalData) {
-        setEnvironmentalData((prev) => ({ ...prev, ...existingRecord.environmentalData }));
-      }
-      if (existingRecord.testInputs?.nominalLoad) {
-        setNominalLoad(existingRecord.testInputs.nominalLoad);
-      }
-      if (existingRecord.testInputs?.verificationType) {
-        setVerificationType(existingRecord.testInputs.verificationType);
-      }
+    if (existingRecord?.complianceDetails) {
+      setComplianceResult(existingRecord.complianceDetails);
     }
   }, [existingRecord]);
 
@@ -112,7 +125,7 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
         { runIndex: 3, appliedLoad: nominalLoad, indication: nominalLoad, deltaL: 0 },
       ]);
     }
-  }, [nominalLoad]);
+  }, [nominalLoad, runs.length]);
 
   const addRun = () => {
     const nextIdx = runs.length + 1;
@@ -189,6 +202,37 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Persistent Self-Healing Status Indicator */}
+      <SelfHealingStatusBar
+        status={syncStatus}
+        lastLocalSaveTime={lastLocalSaveTime}
+        lastServerSyncTime={lastServerSyncTime}
+        onSyncNow={syncNow}
+        onOpenConflictModal={() => conflictData && setConflictData(conflictData)}
+      />
+
+      {/* Restore Unsaved Test Data Prompt Modal */}
+      {showRestorePrompt && localDraftCandidate && (
+        <RestoreDraftModal
+          isOpen={showRestorePrompt}
+          draft={localDraftCandidate}
+          serverRecord={existingRecord}
+          onRestore={restoreLocalDraft}
+          onDiscard={discardLocalDraft}
+        />
+      )}
+
+      {/* Sync Conflict Resolution Modal */}
+      {conflictData && (
+        <ConflictResolutionModal
+          isOpen={Boolean(conflictData)}
+          localDraft={conflictData.localDraft}
+          serverRecord={conflictData.serverRecord}
+          onResolve={resolveConflict}
+          onCancel={() => setConflictData(null)}
+        />
+      )}
+
       {/* Banner */}
       <div className="bg-[#fcfbf9] p-5 rounded-lg border border-[#ded7c4] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

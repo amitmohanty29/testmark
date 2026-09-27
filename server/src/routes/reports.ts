@@ -8,6 +8,7 @@ import { logAudit } from '../middleware/auditLogger';
 import { MetrologyDiffEngine } from '../engine/metrologyDiffEngine';
 import { OimlComplianceEngine } from '../engine/complianceEngine';
 import { OimlCalculationEngine } from '../engine/calculationEngine';
+import { CertificateExportEngine, CertificateTemplateId, CERTIFICATE_TEMPLATES } from '../engine/certificateExportEngine';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -874,6 +875,139 @@ router.get('/:id/diff/:v1/:v2', authenticateToken, async (req: AuthenticatedRequ
   } catch (error) {
     console.error('Failed to compute version diff:', error);
     res.status(500).json({ error: 'Failed to compute diff.' });
+  }
+});
+
+// List available certificate exporter templates
+router.get('/templates/available', async (_req, res: Response): Promise<void> => {
+  try {
+    const templates = CertificateExportEngine.getAvailableTemplates();
+    res.json({ templates });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch certificate templates.' });
+  }
+});
+
+// Multi-National OIML CS Certificate Exporter (PDF and DOCX)
+router.get('/:id/export-certificate/:templateId', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const templateId = (req.params.templateId as string).toUpperCase() as CertificateTemplateId;
+    const format = ((req.query.format as string) || 'pdf').toLowerCase();
+    const requestedVersion = req.query.version ? parseInt(String(req.query.version)) : undefined;
+
+    const template = CERTIFICATE_TEMPLATES[templateId];
+    if (!template) {
+      res.status(400).json({ error: `Unsupported certificate template: ${templateId}. Available: INDIAN_RRSL, OIML_CS` });
+      return;
+    }
+
+    const report = await prisma.report.findUnique({
+      where: { id },
+      include: {
+        evaluation: {
+          include: {
+            instrument: true,
+            laboratory: true,
+            testingOfficer: { select: { id: true, name: true, email: true, designation: true } },
+            reviewingOfficer: { select: { id: true, name: true, email: true, designation: true } },
+            testRecords: { include: { attachments: true }, orderBy: { createdAt: 'asc' } },
+          },
+        },
+        ruleConfig: true,
+        versions: true,
+      },
+    });
+
+    if (!report) {
+      res.status(404).json({ error: 'Report not found.' });
+      return;
+    }
+
+    let targetReport = report;
+    let targetEvaluation = (report as any).evaluation;
+    let targetInstrument = targetEvaluation?.instrument;
+    let targetLaboratory = targetEvaluation?.laboratory;
+    let targetTestRecords = targetEvaluation?.testRecords || [];
+    let targetTestingOfficer = targetEvaluation?.testingOfficer;
+    let targetReviewingOfficer = targetEvaluation?.reviewingOfficer;
+    let targetRuleConfig = (report as any).ruleConfig;
+
+    if (requestedVersion && requestedVersion !== report.version) {
+      const historicalVer = report.versions.find((v: any) => v.version === requestedVersion);
+      if (historicalVer) {
+        const snap = safeParse(historicalVer.reportData, {});
+        targetReport = {
+          ...report,
+          version: historicalVer.version,
+          integrityHash: historicalVer.integrityHash,
+          createdAt: historicalVer.createdAt,
+          reportData: historicalVer.reportData,
+        };
+        targetEvaluation = snap.evaluation || targetEvaluation;
+        targetInstrument = snap.instrument || targetInstrument;
+        targetLaboratory = snap.laboratory || targetLaboratory;
+        targetTestRecords = snap.testRecords || targetTestRecords;
+        targetTestingOfficer = snap.testingOfficer || targetTestingOfficer;
+        targetReviewingOfficer = snap.reviewingOfficer || targetReviewingOfficer;
+        targetRuleConfig = snap.ruleConfig || targetRuleConfig;
+      }
+    }
+
+    const ctx = {
+      report: targetReport,
+      evaluation: targetEvaluation,
+      instrument: targetInstrument,
+      laboratory: targetLaboratory,
+      testRecords: targetTestRecords,
+      testingOfficer: targetTestingOfficer,
+      reviewingOfficer: targetReviewingOfficer,
+      ruleConfig: targetRuleConfig,
+    };
+
+    let fileBuffer: Buffer;
+    if (format === 'docx') {
+      fileBuffer = await CertificateExportEngine.generateDOCX(templateId, ctx);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}_${template.shortCode}_v${targetReport.version}.docx"`);
+    } else {
+      fileBuffer = await CertificateExportEngine.generatePDF(templateId, ctx);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}_${template.shortCode}_v${targetReport.version}.pdf"`);
+    }
+
+    // Record certificate generation in Instrument Digital Passport Timeline
+    if (targetInstrument?.id) {
+      await prisma.timelineEvent.create({
+        data: {
+          instrumentId: targetInstrument.id,
+          evaluationId: targetEvaluation?.id || null,
+          eventType: 'CERTIFICATE_GENERATED',
+          title: `Official Certificate Issued: ${template.name}`,
+          description: `Generated ${format.toUpperCase()} certificate in [${template.name}] format for Report ${report.reportId} (v${targetReport.version}) under ${template.standardReference}.`,
+          officerName: req.user!.name,
+          officerRole: req.user!.role,
+        },
+      });
+    }
+
+    // Record in Audit Ledger
+    await logAudit({
+      entityType: 'REPORT',
+      entityId: report.id,
+      action: 'CERTIFICATE_EXPORTED',
+      actorId: req.user!.id,
+      actorName: req.user!.name,
+      actorRole: req.user!.role,
+      description: `Report ${report.reportId} (v${targetReport.version}) exported as ${template.name} (${format.toUpperCase()})`,
+      evaluationId: targetEvaluation?.id,
+      metadata: { templateId, format, version: targetReport.version, reportId: report.reportId },
+    });
+
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error('Certificate export error:', error);
+    res.status(500).json({ error: 'Failed to export certificate.' });
   }
 });
 

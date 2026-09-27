@@ -23,6 +23,10 @@ import { api } from '../../api';
 import { EnvironmentalPanel } from './EnvironmentalPanel';
 import { EvidenceAttachmentPanel } from './EvidenceAttachmentPanel';
 import { ShowMeWhyModal } from './ShowMeWhyModal';
+import { SelfHealingStatusBar } from './SelfHealingStatusBar';
+import { RestoreDraftModal } from './RestoreDraftModal';
+import { ConflictResolutionModal } from './ConflictResolutionModal';
+import { useSelfHealingTestState } from '../../hooks/useSelfHealingTestState';
 
 interface TareModuleProps {
   evaluationId: string;
@@ -42,33 +46,70 @@ export const TareModule: React.FC<TareModuleProps> = ({
   const defaultTareLoad = Math.round(instrument.maxCapacity * 0.2 * 100) / 100;
   const defaultNetLoad = Math.round(instrument.maxCapacity * 0.5 * 100) / 100;
 
-  const [tareObservation, setTareObservation] = useState<TareObservation>(
-    existingRecord?.observations?.[0] || {
-      tareLoad: defaultTareLoad,
-      tareIndication: defaultTareLoad,
-      tareDeltaL: 0,
-      netLoad: defaultNetLoad,
-      netIndication: defaultNetLoad,
-      netDeltaL: 0,
-    }
-  );
+  const defaultTareObs: TareObservation = {
+    tareLoad: defaultTareLoad,
+    tareIndication: defaultTareLoad,
+    tareDeltaL: 0,
+    netLoad: defaultNetLoad,
+    netIndication: defaultNetLoad,
+    netDeltaL: 0,
+  };
 
-  const [environmentalData, setEnvironmentalData] = useState<EnvironmentalConditions>(
-    existingRecord?.environmentalData || {
+  // Self-healing state engine with immediate IndexedDB saving and offline resiliency
+  const {
+    observations,
+    setObservations,
+    environmentalData,
+    setEnvironmentalData,
+    testInputs,
+    setTestInputs,
+    notes,
+    setNotes,
+    syncStatus,
+    lastLocalSaveTime,
+    lastServerSyncTime,
+    showRestorePrompt,
+    localDraftCandidate,
+    conflictData,
+    setConflictData,
+    restoreLocalDraft,
+    discardLocalDraft,
+    resolveConflict,
+    syncNow,
+  } = useSelfHealingTestState({
+    evaluationId,
+    testType: 'TARE',
+    existingRecord,
+    onRecordSaved,
+    readOnly,
+    initialObservations: [defaultTareObs],
+    initialEnvironmentalData: {
       temperatureCelsius: 22.0,
       relativeHumidity: 50,
       atmosphericPressureHpa: 1013,
       isInstrumentLevel: true,
       standardWeightsCertificate: 'NPL/MET/2026/F1-CLASS/9941',
       notes: 'Tare container verified before applying net calibration weights.',
-    }
-  );
+    },
+    initialTestInputs: {
+      verificationType: 'INITIAL',
+    },
+  });
 
-  const [verificationType, setVerificationType] = useState<VerificationType>(
-    (existingRecord?.testInputs?.verificationType as VerificationType) || 'INITIAL'
-  );
+  const tareObservation: TareObservation = (observations && observations[0]) || defaultTareObs;
+  const setTareObservation = (obs: TareObservation | ((prev: TareObservation) => TareObservation)) => {
+    setObservations((prev) => {
+      const current = (prev && prev[0]) || defaultTareObs;
+      const next = typeof obs === 'function' ? obs(current) : obs;
+      return [next];
+    });
+  };
 
-  const [notes, setNotes] = useState<string>(existingRecord?.notes || '');
+  const verificationType = (testInputs?.verificationType as VerificationType) || 'INITIAL';
+  const setVerificationType = (val: VerificationType) => {
+    setTestInputs((prev: any) => ({ ...prev, verificationType: val }));
+  };
+
   const [complianceResult, setComplianceResult] = useState<TestComplianceResult | null>(
     existingRecord?.complianceDetails || null
   );
@@ -80,24 +121,10 @@ export const TareModule: React.FC<TareModuleProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showMeWhyOpen, setShowMeWhyOpen] = useState(false);
 
-  // Sync state if existingRecord changes or is updated
+  // Sync compliance details if existingRecord changes
   useEffect(() => {
-    if (existingRecord) {
-      if (existingRecord.observations && existingRecord.observations.length > 0) {
-        setTareObservation(existingRecord.observations[0]);
-      }
-      if (existingRecord.complianceDetails) {
-        setComplianceResult(existingRecord.complianceDetails);
-      }
-      if (existingRecord.notes !== undefined) {
-        setNotes(existingRecord.notes || '');
-      }
-      if (existingRecord.environmentalData) {
-        setEnvironmentalData((prev) => ({ ...prev, ...existingRecord.environmentalData }));
-      }
-      if (existingRecord.testInputs?.verificationType) {
-        setVerificationType(existingRecord.testInputs.verificationType);
-      }
+    if (existingRecord?.complianceDetails) {
+      setComplianceResult(existingRecord.complianceDetails);
     }
   }, [existingRecord]);
 
@@ -163,6 +190,37 @@ export const TareModule: React.FC<TareModuleProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Persistent Self-Healing Status Indicator */}
+      <SelfHealingStatusBar
+        status={syncStatus}
+        lastLocalSaveTime={lastLocalSaveTime}
+        lastServerSyncTime={lastServerSyncTime}
+        onSyncNow={syncNow}
+        onOpenConflictModal={() => conflictData && setConflictData(conflictData)}
+      />
+
+      {/* Restore Unsaved Test Data Prompt Modal */}
+      {showRestorePrompt && localDraftCandidate && (
+        <RestoreDraftModal
+          isOpen={showRestorePrompt}
+          draft={localDraftCandidate}
+          serverRecord={existingRecord}
+          onRestore={restoreLocalDraft}
+          onDiscard={discardLocalDraft}
+        />
+      )}
+
+      {/* Sync Conflict Resolution Modal */}
+      {conflictData && (
+        <ConflictResolutionModal
+          isOpen={Boolean(conflictData)}
+          localDraft={conflictData.localDraft}
+          serverRecord={conflictData.serverRecord}
+          onResolve={resolveConflict}
+          onCancel={() => setConflictData(null)}
+        />
+      )}
+
       {/* Banner */}
       <div className="bg-[#fcfbf9] p-5 rounded-lg border border-[#ded7c4] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

@@ -229,6 +229,13 @@ export const api = {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    if (res.status === 409) {
+      const err: any = new Error(data.message || 'Sync conflict detected');
+      err.status = 409;
+      err.conflict = true;
+      err.serverRecord = data.serverRecord;
+      throw err;
+    }
     if (!res.ok) throw new Error(data.error || 'Failed to save test record');
     return data;
   },
@@ -379,6 +386,25 @@ export const api = {
   getReportExportUrl(id: string, format: 'pdf' | 'docx', version?: number): string {
     const token = localStorage.getItem('marksure_token');
     return `${API_BASE}/reports/${id}/export/${format}?token=${token}${version ? `&version=${version}` : ''}`;
+  },
+
+  getCertificateExportUrl(
+    id: string,
+    templateId: 'INDIAN_RRSL' | 'OIML_CS',
+    format: 'pdf' | 'docx' = 'pdf',
+    version?: number
+  ): string {
+    const token = localStorage.getItem('marksure_token');
+    return `${API_BASE}/reports/${id}/export-certificate/${templateId}?format=${format}&token=${token}${
+      version ? `&version=${version}` : ''
+    }`;
+  },
+
+  async getAvailableCertificateTemplates(): Promise<{ templates: any[] }> {
+    const res = await fetch(`${API_BASE}/reports/templates/available`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
   },
 
   async getReportVersions(id: string): Promise<{ versions: ReportVersion[] }> {

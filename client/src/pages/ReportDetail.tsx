@@ -22,10 +22,12 @@ import {
   Printer,
   Edit3,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  Award,
 } from 'lucide-react';
 import { AccuracyClassBadge } from '../components/ui/StatusBadge';
 import { ReportDiffModal } from '../components/reports/ReportDiffModal';
+import { CertificateExportModal } from '../components/reports/CertificateExportModal';
 
 export const ReportDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -50,6 +52,9 @@ export const ReportDetail: React.FC = () => {
 
   // Diff Modal state
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
+
+  // Multi-National Certificate Export Modal state
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
   useEffect(() => {
     if (id) loadReport(id);
@@ -198,6 +203,14 @@ export const ReportDetail: React.FC = () => {
           >
             <FileText className="w-3.5 h-3.5 mr-1 text-blue-700" /> Export Word (.docx)
           </a>
+
+          <button
+            onClick={() => setIsCertModalOpen(true)}
+            className="btn-gov-primary text-xs bg-[#005a3c] hover:bg-[#004730] flex items-center shadow"
+            title="Export statutory Indian RRSL or international OIML CS Scheme Certificate"
+          >
+            <Award className="w-3.5 h-3.5 mr-1 text-amber-300" /> Export Certificate As...
+          </button>
 
           {versionNumbers.length >= 2 && (
             <button
@@ -693,6 +706,17 @@ export const ReportDetail: React.FC = () => {
         reportId={report.id}
         reportCode={report.reportId}
         availableVersions={versionNumbers}
+      />
+
+      {/* Multi-National OIML CS Certificate Exporter Modal */}
+      <CertificateExportModal
+        isOpen={isCertModalOpen}
+        onClose={() => setIsCertModalOpen(false)}
+        report={report}
+        onExportSuccess={(msg) => {
+          setFinalizeSuccess(msg);
+          loadReport(report.id);
+        }}
       />
     </div>
   );

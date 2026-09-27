@@ -182,14 +182,17 @@ export const DigitalPassport: React.FC = () => {
   // 3. Custom events
   (passport.timelineEvents || []).forEach((te: any) => {
     if (!unifiedTimeline.some((u) => u.title === te.title && Math.abs(new Date(u.date).getTime() - new Date(te.createdAt).getTime()) < 60000)) {
+      const isCert = te.eventType === 'CERTIFICATE_GENERATED';
       unifiedTimeline.push({
         id: `event-${te.id}`,
         date: te.createdAt,
         type: 'EVENT',
         title: te.title,
         description: te.description,
-        badge: 'LEDGER',
-        badgeColor: 'bg-gov-sand-200 text-gov-sand-800',
+        badge: isCert ? 'CERTIFICATE' : 'LEDGER',
+        badgeColor: isCert
+          ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold'
+          : 'bg-gov-sand-200 text-gov-sand-800',
         officer: te.officerName,
         evaluationId: te.evaluationId,
       });

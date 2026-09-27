@@ -28,6 +28,10 @@ import { api } from '../../api';
 import { EnvironmentalPanel } from './EnvironmentalPanel';
 import { EvidenceAttachmentPanel } from './EvidenceAttachmentPanel';
 import { ShowMeWhyModal } from './ShowMeWhyModal';
+import { SelfHealingStatusBar } from './SelfHealingStatusBar';
+import { RestoreDraftModal } from './RestoreDraftModal';
+import { ConflictResolutionModal } from './ConflictResolutionModal';
+import { useSelfHealingTestState } from '../../hooks/useSelfHealingTestState';
 
 interface WeighingPerformanceModuleProps {
   evaluationId: string;
@@ -44,30 +48,51 @@ export const WeighingPerformanceModule: React.FC<WeighingPerformanceModuleProps>
   onRecordSaved,
   readOnly = false,
 }) => {
-  // Environmental data
-  const [environmentalData, setEnvironmentalData] = useState<EnvironmentalConditions>(
-    existingRecord?.environmentalData || {
+  // Self-healing state engine with immediate IndexedDB saving and offline resiliency
+  const {
+    observations,
+    setObservations,
+    environmentalData,
+    setEnvironmentalData,
+    testInputs,
+    setTestInputs,
+    notes,
+    setNotes,
+    syncStatus,
+    lastLocalSaveTime,
+    lastServerSyncTime,
+    showRestorePrompt,
+    localDraftCandidate,
+    conflictData,
+    setConflictData,
+    restoreLocalDraft,
+    discardLocalDraft,
+    resolveConflict,
+    syncNow,
+  } = useSelfHealingTestState({
+    evaluationId,
+    testType: 'WEIGHING_PERFORMANCE',
+    existingRecord,
+    onRecordSaved,
+    readOnly,
+    initialEnvironmentalData: {
       temperatureCelsius: 22.0,
       relativeHumidity: 50,
       atmosphericPressureHpa: 1013,
       isInstrumentLevel: true,
       standardWeightsCertificate: 'NPL/MET/2026/F1-CLASS/9941',
       notes: 'Controlled metrology room with granite test bench.',
-    }
-  );
+    },
+    initialTestInputs: {
+      verificationType: 'INITIAL',
+    },
+  });
 
-  const [verificationType, setVerificationType] = useState<VerificationType>(
-    (existingRecord?.testInputs?.verificationType as VerificationType) || 'INITIAL'
-  );
+  const verificationType = (testInputs?.verificationType as VerificationType) || 'INITIAL';
+  const setVerificationType = (vt: VerificationType) => {
+    setTestInputs((prev: any) => ({ ...prev, verificationType: vt }));
+  };
 
-  // Observations rows
-  const [observations, setObservations] = useState<WeighingPointObservation[]>(
-    existingRecord?.observations && existingRecord.observations.length > 0
-      ? existingRecord.observations
-      : []
-  );
-
-  const [notes, setNotes] = useState<string>(existingRecord?.notes || '');
   const [complianceResult, setComplianceResult] = useState<TestComplianceResult | null>(
     existingRecord?.complianceDetails || null
   );
@@ -80,24 +105,10 @@ export const WeighingPerformanceModule: React.FC<WeighingPerformanceModuleProps>
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showMeWhyOpen, setShowMeWhyOpen] = useState(false);
 
-  // Sync state if existingRecord changes or is updated
+  // Sync compliance details if existingRecord changes
   useEffect(() => {
-    if (existingRecord) {
-      if (existingRecord.observations && existingRecord.observations.length > 0) {
-        setObservations(existingRecord.observations);
-      }
-      if (existingRecord.complianceDetails) {
-        setComplianceResult(existingRecord.complianceDetails);
-      }
-      if (existingRecord.notes !== undefined) {
-        setNotes(existingRecord.notes || '');
-      }
-      if (existingRecord.environmentalData) {
-        setEnvironmentalData((prev) => ({ ...prev, ...existingRecord.environmentalData }));
-      }
-      if (existingRecord.testInputs?.verificationType) {
-        setVerificationType(existingRecord.testInputs.verificationType);
-      }
+    if (existingRecord?.complianceDetails) {
+      setComplianceResult(existingRecord.complianceDetails);
     }
   }, [existingRecord]);
 
@@ -106,7 +117,7 @@ export const WeighingPerformanceModule: React.FC<WeighingPerformanceModuleProps>
     if (observations.length === 0 && (!existingRecord?.observations || existingRecord.observations.length === 0)) {
       generateStandardPoints();
     }
-  }, []);
+  }, [observations.length]);
 
   const generateStandardPoints = () => {
     const e = instrument.scaleIntervalE;
@@ -249,6 +260,37 @@ export const WeighingPerformanceModule: React.FC<WeighingPerformanceModuleProps>
 
   return (
     <div className="space-y-6">
+      {/* Persistent Self-Healing Status Indicator */}
+      <SelfHealingStatusBar
+        status={syncStatus}
+        lastLocalSaveTime={lastLocalSaveTime}
+        lastServerSyncTime={lastServerSyncTime}
+        onSyncNow={syncNow}
+        onOpenConflictModal={() => conflictData && setConflictData(conflictData)}
+      />
+
+      {/* Restore Unsaved Test Data Prompt Modal */}
+      {showRestorePrompt && localDraftCandidate && (
+        <RestoreDraftModal
+          isOpen={showRestorePrompt}
+          draft={localDraftCandidate}
+          serverRecord={existingRecord}
+          onRestore={restoreLocalDraft}
+          onDiscard={discardLocalDraft}
+        />
+      )}
+
+      {/* Sync Conflict Resolution Modal */}
+      {conflictData && (
+        <ConflictResolutionModal
+          isOpen={Boolean(conflictData)}
+          localDraft={conflictData.localDraft}
+          serverRecord={conflictData.serverRecord}
+          onResolve={resolveConflict}
+          onCancel={() => setConflictData(null)}
+        />
+      )}
+
       {/* Module Overview Banner */}
       <div className="bg-[#fcfbf9] p-5 rounded-lg border border-[#ded7c4] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

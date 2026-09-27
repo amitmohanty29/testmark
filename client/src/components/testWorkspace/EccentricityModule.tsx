@@ -23,6 +23,10 @@ import { api } from '../../api';
 import { EnvironmentalPanel } from './EnvironmentalPanel';
 import { EvidenceAttachmentPanel } from './EvidenceAttachmentPanel';
 import { ShowMeWhyModal } from './ShowMeWhyModal';
+import { SelfHealingStatusBar } from './SelfHealingStatusBar';
+import { RestoreDraftModal } from './RestoreDraftModal';
+import { ConflictResolutionModal } from './ConflictResolutionModal';
+import { useSelfHealingTestState } from '../../hooks/useSelfHealingTestState';
 
 interface EccentricityModuleProps {
   evaluationId: string;
@@ -41,40 +45,68 @@ export const EccentricityModule: React.FC<EccentricityModuleProps> = ({
 }) => {
   // Typical eccentricity load is 1/3 Max per OIML R-76 A.4.7.1
   const defaultLoad = Math.round(instrument.maxCapacity * 0.33 * 100) / 100;
-  const [appliedLoad, setAppliedLoad] = useState<number>(
-    existingRecord?.testInputs?.appliedLoad || defaultLoad
-  );
 
-  const [environmentalData, setEnvironmentalData] = useState<EnvironmentalConditions>(
-    existingRecord?.environmentalData || {
+  const defaultPositions: EccentricityObservation[] = [
+    { positionIndex: 1, positionName: '1. Center (Pos 1)', appliedLoad: defaultLoad, indication: defaultLoad, deltaL: 0 },
+    { positionIndex: 2, positionName: '2. Front-Left (Pos 2)', appliedLoad: defaultLoad, indication: defaultLoad, deltaL: 0 },
+    { positionIndex: 3, positionName: '3. Rear-Left (Pos 3)', appliedLoad: defaultLoad, indication: defaultLoad, deltaL: 0 },
+    { positionIndex: 4, positionName: '4. Rear-Right (Pos 4)', appliedLoad: defaultLoad, indication: defaultLoad, deltaL: 0 },
+    { positionIndex: 5, positionName: '5. Front-Right (Pos 5)', appliedLoad: defaultLoad, indication: defaultLoad, deltaL: 0 },
+  ];
+
+  // Self-healing state engine with immediate IndexedDB saving and offline resiliency
+  const {
+    observations: points,
+    setObservations: setPoints,
+    environmentalData,
+    setEnvironmentalData,
+    testInputs,
+    setTestInputs,
+    notes,
+    setNotes,
+    syncStatus,
+    lastLocalSaveTime,
+    lastServerSyncTime,
+    showRestorePrompt,
+    localDraftCandidate,
+    conflictData,
+    setConflictData,
+    restoreLocalDraft,
+    discardLocalDraft,
+    resolveConflict,
+    syncNow,
+  } = useSelfHealingTestState({
+    evaluationId,
+    testType: 'ECCENTRICITY',
+    existingRecord,
+    onRecordSaved,
+    readOnly,
+    initialObservations: defaultPositions,
+    initialEnvironmentalData: {
       temperatureCelsius: 22.0,
       relativeHumidity: 50,
       atmosphericPressureHpa: 1013,
       isInstrumentLevel: true,
       standardWeightsCertificate: 'NPL/MET/2026/F1-CLASS/9941',
       notes: 'Load placed in center and four platform quadrant centroids.',
-    }
-  );
+    },
+    initialTestInputs: {
+      appliedLoad: defaultLoad,
+      verificationType: 'INITIAL',
+    },
+  });
 
-  const [verificationType, setVerificationType] = useState<VerificationType>(
-    (existingRecord?.testInputs?.verificationType as VerificationType) || 'INITIAL'
-  );
+  const appliedLoad = testInputs?.appliedLoad || defaultLoad;
+  const setAppliedLoad = (val: number) => {
+    setTestInputs((prev: any) => ({ ...prev, appliedLoad: val }));
+  };
 
-  const defaultPositions: EccentricityObservation[] = [
-    { positionIndex: 1, positionName: '1. Center (Pos 1)', appliedLoad, indication: appliedLoad, deltaL: 0 },
-    { positionIndex: 2, positionName: '2. Front-Left (Pos 2)', appliedLoad, indication: appliedLoad, deltaL: 0 },
-    { positionIndex: 3, positionName: '3. Rear-Left (Pos 3)', appliedLoad, indication: appliedLoad, deltaL: 0 },
-    { positionIndex: 4, positionName: '4. Rear-Right (Pos 4)', appliedLoad, indication: appliedLoad, deltaL: 0 },
-    { positionIndex: 5, positionName: '5. Front-Right (Pos 5)', appliedLoad, indication: appliedLoad, deltaL: 0 },
-  ];
+  const verificationType = (testInputs?.verificationType as VerificationType) || 'INITIAL';
+  const setVerificationType = (val: VerificationType) => {
+    setTestInputs((prev: any) => ({ ...prev, verificationType: val }));
+  };
 
-  const [points, setPoints] = useState<EccentricityObservation[]>(
-    existingRecord?.observations && existingRecord.observations.length > 0
-      ? existingRecord.observations
-      : defaultPositions
-  );
-
-  const [notes, setNotes] = useState<string>(existingRecord?.notes || '');
+  const [notesState, setNotesState] = useState<string>(existingRecord?.notes || '');
   const [complianceResult, setComplianceResult] = useState<TestComplianceResult | null>(
     existingRecord?.complianceDetails || null
   );
@@ -87,27 +119,10 @@ export const EccentricityModule: React.FC<EccentricityModuleProps> = ({
   const [showMeWhyOpen, setShowMeWhyOpen] = useState(false);
   const [activeHoverPos, setActiveHoverPos] = useState<number | null>(null);
 
-  // Sync state if existingRecord changes or is updated
+  // Sync compliance details if existingRecord changes
   useEffect(() => {
-    if (existingRecord) {
-      if (existingRecord.observations && existingRecord.observations.length > 0) {
-        setPoints(existingRecord.observations);
-      }
-      if (existingRecord.complianceDetails) {
-        setComplianceResult(existingRecord.complianceDetails);
-      }
-      if (existingRecord.notes !== undefined) {
-        setNotes(existingRecord.notes || '');
-      }
-      if (existingRecord.environmentalData) {
-        setEnvironmentalData((prev) => ({ ...prev, ...existingRecord.environmentalData }));
-      }
-      if (existingRecord.testInputs?.appliedLoad) {
-        setAppliedLoad(existingRecord.testInputs.appliedLoad);
-      }
-      if (existingRecord.testInputs?.verificationType) {
-        setVerificationType(existingRecord.testInputs.verificationType);
-      }
+    if (existingRecord?.complianceDetails) {
+      setComplianceResult(existingRecord.complianceDetails);
     }
   }, [existingRecord]);
 
@@ -173,6 +188,37 @@ export const EccentricityModule: React.FC<EccentricityModuleProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Persistent Self-Healing Status Indicator */}
+      <SelfHealingStatusBar
+        status={syncStatus}
+        lastLocalSaveTime={lastLocalSaveTime}
+        lastServerSyncTime={lastServerSyncTime}
+        onSyncNow={syncNow}
+        onOpenConflictModal={() => conflictData && setConflictData(conflictData)}
+      />
+
+      {/* Restore Unsaved Test Data Prompt Modal */}
+      {showRestorePrompt && localDraftCandidate && (
+        <RestoreDraftModal
+          isOpen={showRestorePrompt}
+          draft={localDraftCandidate}
+          serverRecord={existingRecord}
+          onRestore={restoreLocalDraft}
+          onDiscard={discardLocalDraft}
+        />
+      )}
+
+      {/* Sync Conflict Resolution Modal */}
+      {conflictData && (
+        <ConflictResolutionModal
+          isOpen={Boolean(conflictData)}
+          localDraft={conflictData.localDraft}
+          serverRecord={conflictData.serverRecord}
+          onResolve={resolveConflict}
+          onCancel={() => setConflictData(null)}
+        />
+      )}
+
       {/* Banner */}
       <div className="bg-[#fcfbf9] p-5 rounded-lg border border-[#ded7c4] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

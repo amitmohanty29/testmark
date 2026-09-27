@@ -189,6 +189,9 @@ router.put(
         tareObservation,
         nominalLoad,
         appliedLoad,
+        expectedServerUpdatedAt,
+        forceConflictResolution = false,
+        isAutoSync = false,
       } = req.body;
 
       const evaluation = await prisma.evaluation.findUnique({
@@ -207,6 +210,35 @@ router.put(
           error: `Cannot modify test entries while evaluation is in '${evaluation.state}' state.`,
         });
         return;
+      }
+
+      // Check conflict if expectedServerUpdatedAt is passed and not forcing
+      const existing = await prisma.testRecord.findFirst({
+        where: {
+          evaluationId,
+          testType,
+        },
+      });
+
+      if (existing && existing.updatedAt && expectedServerUpdatedAt && !forceConflictResolution) {
+        const existingTime = new Date(existing.updatedAt).getTime();
+        const expectedTime = new Date(expectedServerUpdatedAt).getTime();
+        // If server is newer by more than 3 seconds
+        if (existingTime > expectedTime + 3000) {
+          res.status(409).json({
+            conflict: true,
+            message: 'Server has newer observations entered in another session or by another officer.',
+            serverRecord: {
+              ...existing,
+              environmentalData: safeParse(existing.environmentalData, {}),
+              testInputs: safeParse(existing.testInputs, {}),
+              observations: safeParse(existing.observations, []),
+              calculationResults: safeParse(existing.calculationResults, null),
+              complianceDetails: safeParse(existing.complianceDetails, null),
+            },
+          });
+          return;
+        }
       }
 
       const specs = {
@@ -267,14 +299,6 @@ router.put(
         }
       }
 
-      // Find existing record or create new
-      const existing = await prisma.testRecord.findFirst({
-        where: {
-          evaluationId,
-          testType,
-        },
-      });
-
       const dataToSave = {
         testType,
         status: calculatedStatus,
@@ -314,29 +338,31 @@ router.put(
         });
       }
 
-      // Log timeline entry
-      await prisma.timelineEvent.create({
-        data: {
-          instrumentId: evaluation.instrumentId,
-          evaluationId,
-          eventType: 'TEST_LOGGED',
-          title: `OIML Test Logged: ${testType}`,
-          description: `Test module [${testType}] updated by ${req.user!.name}. Result: [${calculatedStatus}].`,
-          officerName: req.user!.name,
-          officerRole: req.user!.role,
-        },
-      });
+      // Only log timeline event on manual saves or finalizations (avoid spamming on frame-by-frame auto-sync)
+      if (!isAutoSync || calculatedStatus !== 'DRAFT') {
+        await prisma.timelineEvent.create({
+          data: {
+            instrumentId: evaluation.instrumentId,
+            evaluationId,
+            eventType: 'TEST_LOGGED',
+            title: `OIML Test Logged: ${testType}`,
+            description: `Test module [${testType}] updated by ${req.user!.name}. Result: [${calculatedStatus}].`,
+            officerName: req.user!.name,
+            officerRole: req.user!.role,
+          },
+        });
 
-      await logAudit({
-        entityType: 'TEST_RECORD',
-        entityId: savedRecord.id,
-        action: calculatedStatus === 'DRAFT' ? 'UPDATED' : 'FINALIZED',
-        actorId: req.user!.id,
-        actorName: req.user!.name,
-        actorRole: req.user!.role,
-        description: `Test module [${testType}] saved with status: [${calculatedStatus}]`,
-        evaluationId,
-      });
+        await logAudit({
+          entityType: 'TEST_RECORD',
+          entityId: savedRecord.id,
+          action: calculatedStatus === 'DRAFT' ? 'UPDATED' : 'FINALIZED',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorRole: req.user!.role,
+          description: `Test module [${testType}] saved with status: [${calculatedStatus}]`,
+          evaluationId,
+        });
+      }
 
       res.json({
         message: `Test record for ${testType} successfully saved.`,

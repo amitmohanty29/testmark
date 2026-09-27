@@ -253,12 +253,16 @@ export const DigitalTestWorkspace: React.FC<DigitalTestWorkspaceProps> = ({
       <div className="gov-card overflow-hidden">
         <div className="bg-[#f6f4ed] px-6 py-4 border-b border-[#ded7c4] flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-mono uppercase bg-[#006c51] text-white px-2 py-0.5 rounded font-bold">
                 Digital Test Workspace
               </span>
               <span className="text-xs font-bold text-gov-sand-900">
                 OIML R-76 Laboratory Test Bench
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-300 shadow-xs">
+                <ShieldCheck className="w-3 h-3 text-emerald-700" />
+                IndexedDB Auto-Save & Offline Resilient
               </span>
             </div>
             <p className="text-xs text-gov-sand-600 mt-0.5">
