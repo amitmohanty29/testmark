@@ -297,110 +297,60 @@ export const EvaluationDetail: React.FC = () => {
           )}
         </div>
 
-        {/* Role-Based State Actions Panel */}
-        <div className="bg-[#fcfbf9] p-6 border-t border-[#e5dfd1]">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gov-sand-900 mb-3 flex items-center justify-between">
-            <span>State Management & Officer Actions</span>
-            <span className="text-[10px] font-normal text-gov-sand-500">
-              Role: {user?.role.replace('_', ' ')}
+        {/* Role-Based State Overview Banner */}
+        <div className="bg-[#fcfbf9] p-4 border-t border-[#e5dfd1] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono uppercase bg-gov-sand-200 text-gov-sand-800 px-2 py-0.5 rounded font-bold">
+              Current Stage: {evaluation.state}
             </span>
-          </h3>
+            <span className="text-gov-sand-600">
+              {evaluation.state === 'Draft' && 'Evaluation created. Ready to commence testing.'}
+              {evaluation.state === 'In Progress' && 'Test bench active. Record observation points across the test modules below.'}
+              {evaluation.state === 'Under Review' && 'Test entries finalized. Awaiting Reviewing Officer compliance verification.'}
+              {evaluation.state === 'Completed' && 'Evaluation endorsed & certified under OIML R-76.'}
+            </span>
+          </div>
 
-          {/* Testing Officer Transition Controls */}
-          {(isTestingOfficer || isAdmin) && (
-            <div className="space-y-3">
-              {evaluation.state === 'Draft' && (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleStateTransition('In Progress')}
-                    disabled={transitionLoading}
-                    className="btn-gov-primary text-xs"
-                  >
-                    Start Testing (Move to In Progress)
-                  </button>
-                  <span className="text-[11px] text-gov-sand-600">
-                    Commences OIML test bench protocol.
-                  </span>
-                </div>
-              )}
+          <div className="flex items-center gap-2 shrink-0">
+            {evaluation.state === 'Draft' && (isTestingOfficer || isAdmin) && (
+              <button
+                onClick={() => handleStateTransition('In Progress')}
+                disabled={transitionLoading}
+                className="btn-gov-primary text-xs"
+              >
+                Start Testing (Move to In Progress)
+              </button>
+            )}
 
-              {evaluation.state === 'In Progress' && (
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                  <button
-                    onClick={() => handleStateTransition('Under Review')}
-                    disabled={transitionLoading}
-                    className="btn-gov-primary text-xs bg-blue-700 hover:bg-blue-800"
-                  >
-                    Submit Test Results for Review &rarr;
-                  </button>
-                  <span className="text-[11px] text-gov-sand-600">
-                    Finalizes initial test report and alerts the Reviewing Officer to verify MPE compliance.
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Reviewing Officer & Admin Approval Controls */}
-          {(isReviewingOfficer || isAdmin) && (
-            <div className="space-y-4">
-              {evaluation.state === 'Under Review' && (
-                <div className="bg-white p-4 rounded border border-blue-300 space-y-3">
-                  <div className="text-xs font-bold text-blue-900">
-                    Reviewing Officer Endorsement Decision
-                  </div>
-                  <div>
-                    <label className="gov-label text-[11px]">Official Review Comments / Approval Statement *</label>
-                    <textarea
-                      rows={2}
-                      value={reviewRemarks}
-                      onChange={(e) => setReviewRemarks(e.target.value)}
-                      placeholder="e.g. Test reports and MPE calculations verified. All requirements under OIML R-76 fulfilled. Approved for issuance."
-                      className="gov-input text-xs"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-3 pt-2">
-                    <button
-                      onClick={() => handleStateTransition('Completed')}
-                      disabled={transitionLoading || !reviewRemarks.trim()}
-                      className="btn-gov-primary text-xs bg-emerald-700 hover:bg-emerald-800"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Approve & Complete Evaluation (Certify)
-                    </button>
-                    <button
-                      onClick={() => handleStateTransition('In Progress')}
-                      disabled={transitionLoading}
-                      className="btn-gov-secondary text-xs"
-                    >
-                      Send Back for Re-test (In Progress)
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {evaluation.state === 'Completed' && (
-                <div className="p-3 bg-emerald-50 rounded border border-emerald-300 text-xs text-emerald-900 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                    <span className="font-semibold">
-                      Evaluation is fully approved and marked Completed. Digital Metrology Certificate endorsed.
-                    </span>
-                  </div>
-                  {evaluation.instrument && (
-                    <Link
-                      to={`/passport/${evaluation.instrument.id}`}
-                      className="btn-gov-outline text-xs text-emerald-800 border-emerald-700 hover:bg-emerald-100"
-                    >
-                      Inspect Certified Passport &rarr;
-                    </Link>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+            {evaluation.state === 'Completed' && evaluation.instrument && (
+              <Link
+                to={`/passport/${evaluation.instrument.id}`}
+                className="btn-gov-outline text-xs text-emerald-800 border-emerald-700 hover:bg-emerald-50"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 mr-1 text-emerald-700" /> Inspect Certified Passport &rarr;
+              </Link>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* DIGITAL TEST WORKSPACE (OIML R-76 TEST BENCH) */}
+      {evaluation.instrument ? (
+        <DigitalTestWorkspace
+          evaluation={evaluation}
+          instrument={evaluation.instrument}
+          onEvaluationUpdated={(updatedEval) => {
+            setEvaluation(updatedEval);
+            if (updatedEval.reviewRemarks) {
+              setReviewRemarks(updatedEval.reviewRemarks);
+            }
+          }}
+        />
+      ) : (
+        <div className="p-8 text-center text-xs text-gov-sand-600 bg-white rounded border border-[#ded7c4]">
+          No instrument details linked to this evaluation.
+        </div>
+      )}
     </div>
   );
 };

@@ -1,15 +1,16 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import authRoutes from './routes/auth';
 import laboratoryRoutes from './routes/laboratories';
 import instrumentRoutes from './routes/instruments';
 import evaluationRoutes from './routes/evaluations';
 import testRoutes from './routes/tests';
 import prisma from './prisma';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -24,9 +25,11 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
 // Serve uploaded documents
-const uploadsDir = path.join(__dirname, '../uploads');
+const uploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 app.use('/uploads', express.static(uploadsDir));
 
 // Health check
