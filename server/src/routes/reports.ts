@@ -5,6 +5,9 @@ import { authenticateToken, requireRoles, AuthenticatedRequest } from '../middle
 import { generateReportHash, verifyReportIntegrity } from '../engine/integrityEngine';
 import { ReportGenerator } from '../engine/reportGenerator';
 import { logAudit } from '../middleware/auditLogger';
+import { MetrologyDiffEngine } from '../engine/metrologyDiffEngine';
+import { OimlComplianceEngine } from '../engine/complianceEngine';
+import { OimlCalculationEngine } from '../engine/calculationEngine';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -167,10 +170,12 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
-// Get single report
+// Get single report (supports ?version=X for viewing historical snapshots)
 router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
+    const requestedVersion = req.query.version ? parseInt(String(req.query.version)) : undefined;
+
     const report = await prisma.report.findUnique({
       where: { id },
       include: {
@@ -189,6 +194,26 @@ router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     });
 
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
+
+    // If a specific version is requested, deliver that historical version
+    if (requestedVersion && requestedVersion !== report.version) {
+      const targetVersion = report.versions.find((v: any) => v.version === requestedVersion);
+      if (targetVersion) {
+        const historicalReport = {
+          ...report,
+          version: targetVersion.version,
+          reportData: targetVersion.reportData,
+          integrityHash: targetVersion.integrityHash,
+          createdAt: targetVersion.createdAt,
+          changeDescription: targetVersion.changeDescription,
+          isHistoricalVersion: true,
+          latestVersion: report.version,
+        };
+        res.json({ report: historicalReport });
+        return;
+      }
+    }
+
     res.json({ report });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch report.' });
@@ -234,54 +259,179 @@ router.post('/:id/finalize', authenticateToken, async (req: AuthenticatedRequest
   }
 });
 
-// Revise a finalized report (creates new version)
+// Revise a finalized report (creates new version, never mutates original)
 router.post('/:id/revise', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { changeDescription } = req.body;
+    const { changeDescription, updatedObservations, testTypeToUpdate, customRemarks } = req.body;
+
+    if (!changeDescription || !changeDescription.trim()) {
+      res.status(400).json({ error: 'A valid reason-for-revision is required to revise a finalized report.' });
+      return;
+    }
+
     const report = await prisma.report.findUnique({
       where: { id },
       include: {
         evaluation: {
           include: {
-            instrument: true, laboratory: true,
+            instrument: true,
+            laboratory: true,
             testingOfficer: { select: { id: true, name: true, email: true, role: true, designation: true, department: true } },
             reviewingOfficer: { select: { id: true, name: true, email: true, role: true, designation: true, department: true } },
             testRecords: { include: { attachments: true } },
             ruleConfig: true,
           },
         },
+        versions: { orderBy: { version: 'desc' } },
       },
     });
 
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
 
     const eval_ = (report as any).evaluation;
+    const currentSnapshot = safeParse(report.reportData, {});
+
+    // Ensure the baseline version exists in reportVersion table
+    const existingBaseVersion = await prisma.reportVersion.findFirst({
+      where: { reportId: report.id, version: report.version },
+    });
+    if (!existingBaseVersion) {
+      await prisma.reportVersion.create({
+        data: {
+          reportId: report.id,
+          version: report.version,
+          reportData: report.reportData,
+          integrityHash: report.integrityHash,
+          changeDescription: 'Initial report generation and baseline lock',
+          createdById: report.generatedById || req.user!.id,
+          createdByName: report.generatedByName || req.user!.name,
+          createdAt: report.createdAt,
+        },
+      });
+    }
+
+    // Build the updated test records
+    let revisedTestRecords = eval_.testRecords.map((r: any) => ({
+      testType: r.testType,
+      status: r.status,
+      environmentalData: safeParse(r.environmentalData, {}),
+      testInputs: safeParse(r.testInputs, {}),
+      observations: safeParse(r.observations, []),
+      calculationResults: safeParse(r.calculationResults),
+      complianceDetails: safeParse(r.complianceDetails),
+      notes: r.notes,
+      testedByName: r.testedByName,
+      completedAt: r.completedAt,
+      attachments: r.attachments.map((a: any) => ({ title: a.title, fileName: a.fileName, fileType: a.fileType })),
+    }));
+
+    // If specific observation edits were supplied in the revision request
+    if (updatedObservations && testTypeToUpdate) {
+      const targetIndex = revisedTestRecords.findIndex((r: any) => r.testType === testTypeToUpdate);
+      if (targetIndex !== -1) {
+        revisedTestRecords[targetIndex].observations = updatedObservations;
+
+        // Recalculate deterministic results
+        const specs = {
+          accuracyClass: eval_.instrument.accuracyClass,
+          maxCapacity: eval_.instrument.maxCapacity,
+          minCapacity: eval_.instrument.minCapacity,
+          scaleIntervalE: eval_.instrument.scaleIntervalE,
+          scaleIntervalD: eval_.instrument.scaleIntervalD,
+          verificationUnits: eval_.instrument.verificationUnits,
+          temperatureRange: eval_.instrument.temperatureRange,
+        };
+        const env = revisedTestRecords[targetIndex].environmentalData || {};
+        const vType = revisedTestRecords[targetIndex].testInputs?.verificationType || 'INITIAL';
+
+        try {
+          if (testTypeToUpdate === 'WEIGHING_PERFORMANCE') {
+            const result = OimlComplianceEngine.evaluateWeighingPerformance(updatedObservations, specs, env, vType);
+            revisedTestRecords[targetIndex].status = result.verdict;
+            revisedTestRecords[targetIndex].calculationResults = result.calculationOutput;
+            revisedTestRecords[targetIndex].complianceDetails = { verdict: result.verdict, whyBreakdown: result.showMeWhy };
+          } else if (testTypeToUpdate === 'REPEATABILITY') {
+            const nominalLoad = revisedTestRecords[targetIndex].testInputs?.nominalLoad || eval_.instrument.maxCapacity * 0.5;
+            const result = OimlComplianceEngine.evaluateRepeatability(nominalLoad, updatedObservations, specs, env, vType);
+            revisedTestRecords[targetIndex].status = result.verdict;
+            revisedTestRecords[targetIndex].calculationResults = result.calculationOutput;
+            revisedTestRecords[targetIndex].complianceDetails = { verdict: result.verdict, whyBreakdown: result.showMeWhy };
+          } else if (testTypeToUpdate === 'ECCENTRICITY') {
+            const appliedLoad = revisedTestRecords[targetIndex].testInputs?.appliedLoad || eval_.instrument.maxCapacity * 0.33;
+            const result = OimlComplianceEngine.evaluateEccentricity(appliedLoad, updatedObservations, specs, env, vType);
+            revisedTestRecords[targetIndex].status = result.verdict;
+            revisedTestRecords[targetIndex].calculationResults = result.calculationOutput;
+            revisedTestRecords[targetIndex].complianceDetails = { verdict: result.verdict, whyBreakdown: result.showMeWhy };
+          } else if (testTypeToUpdate === 'TARE') {
+            const result = OimlComplianceEngine.evaluateTare(updatedObservations[0], specs, env, vType);
+            revisedTestRecords[targetIndex].status = result.verdict;
+            revisedTestRecords[targetIndex].calculationResults = result.calculationOutput;
+            revisedTestRecords[targetIndex].complianceDetails = { verdict: result.verdict, whyBreakdown: result.showMeWhy };
+          }
+        } catch (calcErr) {
+          console.warn('Re-evaluation error during revision:', calcErr);
+        }
+      }
+    }
+
     const newReportData = {
-      ...safeParse(report.reportData, {}),
+      ...currentSnapshot,
       evaluation: {
-        evaluationNumber: eval_.evaluationNumber, state: eval_.state,
-        evaluationDate: eval_.evaluationDate, standardReference: eval_.standardReference,
-        patternApprovalNo: eval_.patternApprovalNo, generalRemarks: eval_.generalRemarks,
-        reviewRemarks: eval_.reviewRemarks, completedAt: eval_.completedAt,
+        evaluationNumber: eval_.evaluationNumber,
+        state: eval_.state,
+        evaluationDate: eval_.evaluationDate,
+        standardReference: eval_.standardReference,
+        patternApprovalNo: eval_.patternApprovalNo,
+        generalRemarks: customRemarks || eval_.generalRemarks,
+        reviewRemarks: eval_.reviewRemarks,
+        completedAt: eval_.completedAt,
       },
-      testRecords: eval_.testRecords.map((r: any) => ({
-        testType: r.testType, status: r.status,
-        environmentalData: safeParse(r.environmentalData, {}),
-        testInputs: safeParse(r.testInputs, {}),
-        observations: safeParse(r.observations, []),
-        calculationResults: safeParse(r.calculationResults),
-        complianceDetails: safeParse(r.complianceDetails),
-        notes: r.notes, testedByName: r.testedByName, completedAt: r.completedAt,
-        attachments: r.attachments.map((a: any) => ({ title: a.title, fileName: a.fileName, fileType: a.fileType })),
-      })),
+      instrument: {
+        passportId: eval_.instrument.passportId,
+        manufacturer: eval_.instrument.manufacturer,
+        model: eval_.instrument.model,
+        serialNumber: eval_.instrument.serialNumber,
+        instrumentType: eval_.instrument.instrumentType,
+        accuracyClass: eval_.instrument.accuracyClass,
+        maxCapacity: eval_.instrument.maxCapacity,
+        minCapacity: eval_.instrument.minCapacity,
+        scaleIntervalE: eval_.instrument.scaleIntervalE,
+        scaleIntervalD: eval_.instrument.scaleIntervalD,
+        verificationUnits: eval_.instrument.verificationUnits,
+        tareRange: eval_.instrument.tareRange,
+        temperatureRange: eval_.instrument.temperatureRange,
+        powerSupply: eval_.instrument.powerSupply,
+      },
+      laboratory: {
+        name: eval_.laboratory.name,
+        code: eval_.laboratory.code,
+        address: eval_.laboratory.address,
+        accreditationNumber: eval_.laboratory.accreditationNumber,
+      },
+      testRecords: revisedTestRecords,
       revisedAt: new Date().toISOString(),
+      revisionReason: changeDescription.trim(),
     };
 
     const newVersion = report.version + 1;
     const newDataStr = JSON.stringify(newReportData);
     const newHash = generateReportHash(newDataStr);
 
+    // Save the new version record (immutable historical archive)
+    await prisma.reportVersion.create({
+      data: {
+        reportId: report.id,
+        version: newVersion,
+        reportData: newDataStr,
+        integrityHash: newHash,
+        changeDescription: changeDescription.trim(),
+        createdById: req.user!.id,
+        createdByName: req.user!.name,
+      },
+    });
+
+    // Update active report pointer
     const updated = await prisma.report.update({
       where: { id: req.params.id as string },
       data: {
@@ -294,28 +444,44 @@ router.post('/:id/revise', authenticateToken, async (req: AuthenticatedRequest, 
       },
     });
 
-    await prisma.reportVersion.create({
-      data: {
-        reportId: report.id,
-        version: newVersion,
-        reportData: newDataStr,
-        integrityHash: newHash,
-        changeDescription: changeDescription || 'Report revised with latest evaluation data',
-        createdById: req.user!.id,
-        createdByName: req.user!.name,
-      },
-    });
+    // Surface revision event on the Instrument Digital Passport timeline
+    if (eval_.instrumentId) {
+      await prisma.timelineEvent.create({
+        data: {
+          instrumentId: eval_.instrumentId,
+          evaluationId: eval_.id,
+          eventType: 'REPORT_REVISED',
+          title: `Report ${report.reportId} Revised to Version ${newVersion}`,
+          description: `Revision reason: ${changeDescription.trim()}. Cryptographic Digest: ${newHash}`,
+          officerName: req.user!.name,
+          officerRole: req.user!.role,
+        },
+      });
+    }
 
+    // Log revision in the audit trail
     await logAudit({
-      entityType: 'REPORT', entityId: report.id, action: 'REVISED',
-      actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role,
-      description: `Report ${report.reportId} revised to v${newVersion}. ${changeDescription || ''}`,
+      entityType: 'REPORT',
+      entityId: report.id,
+      action: 'REVISED',
+      actorId: req.user!.id,
+      actorName: req.user!.name,
+      actorRole: req.user!.role,
+      description: `Report ${report.reportId} revised to v${newVersion}. Reason: ${changeDescription.trim()}`,
       previousState: { version: report.version, hash: report.integrityHash },
       newState: { version: newVersion, hash: newHash },
+      metadata: { reason: changeDescription.trim(), previousVersion: report.version, newVersion },
+      evaluationId: eval_.id,
     });
 
-    res.json({ report: updated, message: `Report revised to version ${newVersion}.` });
+    res.json({
+      report: updated,
+      newVersion,
+      integrityHash: newHash,
+      message: `Report revised successfully to version ${newVersion}. Original Version ${report.version} preserved in audit ledger.`,
+    });
   } catch (error) {
+    console.error('Failed to revise report:', error);
     res.status(500).json({ error: 'Failed to revise report.' });
   }
 });
@@ -493,10 +659,12 @@ router.post('/verify-upload', upload.single('file'), async (req, res): Promise<v
   }
 });
 
-// Export PDF
+// Export PDF (supports ?version=X to export historical versions permanently)
 router.get('/:id/export/pdf', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
+    const requestedVersion = req.query.version ? parseInt(String(req.query.version)) : undefined;
+
     const report = await prisma.report.findUnique({
       where: { id },
       include: {
@@ -509,31 +677,63 @@ router.get('/:id/export/pdf', authenticateToken, async (req: AuthenticatedReques
           },
         },
         ruleConfig: true,
+        versions: true,
       },
     });
 
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
 
-    const reportAny = report as any;
+    let targetReport = report;
+    let targetEvaluation = (report as any).evaluation;
+    let targetInstrument = targetEvaluation?.instrument;
+    let targetLaboratory = targetEvaluation?.laboratory;
+    let targetTestRecords = targetEvaluation?.testRecords || [];
+    let targetTestingOfficer = targetEvaluation?.testingOfficer;
+    let targetReviewingOfficer = targetEvaluation?.reviewingOfficer;
+    let targetRuleConfig = (report as any).ruleConfig;
+
+    // If historical version requested, load from immutable snapshot
+    if (requestedVersion && requestedVersion !== report.version) {
+      const historicalVer = report.versions.find((v: any) => v.version === requestedVersion);
+      if (historicalVer) {
+        const snap = safeParse(historicalVer.reportData, {});
+        targetReport = {
+          ...report,
+          version: historicalVer.version,
+          integrityHash: historicalVer.integrityHash,
+          createdAt: historicalVer.createdAt,
+          reportData: historicalVer.reportData,
+        };
+        targetEvaluation = snap.evaluation || targetEvaluation;
+        targetInstrument = snap.instrument || targetInstrument;
+        targetLaboratory = snap.laboratory || targetLaboratory;
+        targetTestRecords = snap.testRecords || targetTestRecords;
+        targetTestingOfficer = snap.testingOfficer || targetTestingOfficer;
+        targetReviewingOfficer = snap.reviewingOfficer || targetReviewingOfficer;
+        targetRuleConfig = snap.ruleConfig || targetRuleConfig;
+      }
+    }
+
     const pdfBuffer = await ReportGenerator.generatePDF({
-      report,
-      evaluation: reportAny.evaluation,
-      instrument: reportAny.evaluation?.instrument,
-      laboratory: reportAny.evaluation?.laboratory,
-      testRecords: reportAny.evaluation?.testRecords || [],
-      testingOfficer: reportAny.evaluation?.testingOfficer,
-      reviewingOfficer: reportAny.evaluation?.reviewingOfficer,
-      ruleConfig: reportAny.ruleConfig,
+      report: targetReport,
+      evaluation: targetEvaluation,
+      instrument: targetInstrument,
+      laboratory: targetLaboratory,
+      testRecords: targetTestRecords,
+      testingOfficer: targetTestingOfficer,
+      reviewingOfficer: targetReviewingOfficer,
+      ruleConfig: targetRuleConfig,
     });
 
     await logAudit({
       entityType: 'REPORT', entityId: report.id, action: 'EXPORTED_PDF',
       actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role,
-      description: `Report ${report.reportId} exported as PDF`,
+      description: `Report ${report.reportId} (v${targetReport.version}) exported as PDF`,
+      metadata: { version: targetReport.version },
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}_v${targetReport.version}.pdf"`);
     res.send(pdfBuffer);
   } catch (error) {
     console.error('PDF export error:', error);
@@ -541,10 +741,12 @@ router.get('/:id/export/pdf', authenticateToken, async (req: AuthenticatedReques
   }
 });
 
-// Export DOCX
+// Export DOCX (supports ?version=X to export historical versions permanently)
 router.get('/:id/export/docx', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
+    const requestedVersion = req.query.version ? parseInt(String(req.query.version)) : undefined;
+
     const report = await prisma.report.findUnique({
       where: { id },
       include: {
@@ -557,31 +759,62 @@ router.get('/:id/export/docx', authenticateToken, async (req: AuthenticatedReque
           },
         },
         ruleConfig: true,
+        versions: true,
       },
     });
 
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
 
-    const reportAny = report as any;
+    let targetReport = report;
+    let targetEvaluation = (report as any).evaluation;
+    let targetInstrument = targetEvaluation?.instrument;
+    let targetLaboratory = targetEvaluation?.laboratory;
+    let targetTestRecords = targetEvaluation?.testRecords || [];
+    let targetTestingOfficer = targetEvaluation?.testingOfficer;
+    let targetReviewingOfficer = targetEvaluation?.reviewingOfficer;
+    let targetRuleConfig = (report as any).ruleConfig;
+
+    if (requestedVersion && requestedVersion !== report.version) {
+      const historicalVer = report.versions.find((v: any) => v.version === requestedVersion);
+      if (historicalVer) {
+        const snap = safeParse(historicalVer.reportData, {});
+        targetReport = {
+          ...report,
+          version: historicalVer.version,
+          integrityHash: historicalVer.integrityHash,
+          createdAt: historicalVer.createdAt,
+          reportData: historicalVer.reportData,
+        };
+        targetEvaluation = snap.evaluation || targetEvaluation;
+        targetInstrument = snap.instrument || targetInstrument;
+        targetLaboratory = snap.laboratory || targetLaboratory;
+        targetTestRecords = snap.testRecords || targetTestRecords;
+        targetTestingOfficer = snap.testingOfficer || targetTestingOfficer;
+        targetReviewingOfficer = snap.reviewingOfficer || targetReviewingOfficer;
+        targetRuleConfig = snap.ruleConfig || targetRuleConfig;
+      }
+    }
+
     const docxBuffer = await ReportGenerator.generateDOCX({
-      report,
-      evaluation: reportAny.evaluation,
-      instrument: reportAny.evaluation?.instrument,
-      laboratory: reportAny.evaluation?.laboratory,
-      testRecords: reportAny.evaluation?.testRecords || [],
-      testingOfficer: reportAny.evaluation?.testingOfficer,
-      reviewingOfficer: reportAny.evaluation?.reviewingOfficer,
-      ruleConfig: reportAny.ruleConfig,
+      report: targetReport,
+      evaluation: targetEvaluation,
+      instrument: targetInstrument,
+      laboratory: targetLaboratory,
+      testRecords: targetTestRecords,
+      testingOfficer: targetTestingOfficer,
+      reviewingOfficer: targetReviewingOfficer,
+      ruleConfig: targetRuleConfig,
     });
 
     await logAudit({
       entityType: 'REPORT', entityId: report.id, action: 'EXPORTED_DOCX',
       actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role,
-      description: `Report ${report.reportId} exported as DOCX`,
+      description: `Report ${report.reportId} (v${targetReport.version}) exported as DOCX`,
+      metadata: { version: targetReport.version },
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}.docx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}_v${targetReport.version}.docx"`);
     res.send(docxBuffer);
   } catch (error) {
     console.error('DOCX export error:', error);
@@ -603,7 +836,7 @@ router.get('/:id/versions', authenticateToken, async (req: AuthenticatedRequest,
   }
 });
 
-// Diff two versions
+// Diff two versions using MetrologyDiffEngine
 router.get('/:id/diff/:v1/:v2', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const reportId = req.params.id as string;
@@ -618,36 +851,28 @@ router.get('/:id/diff/:v1/:v2', authenticateToken, async (req: AuthenticatedRequ
 
     if (!v1 || !v2) { res.status(404).json({ error: 'One or both versions not found.' }); return; }
 
-    const data1 = safeParse(v1.reportData, {});
-    const data2 = safeParse(v2.reportData, {});
+    const diffReport = MetrologyDiffEngine.compareReportSnapshots(
+      v1.reportData,
+      v2.reportData,
+      {
+        version: v1.version,
+        createdAt: v1.createdAt,
+        createdByName: v1.createdByName,
+        integrityHash: v1.integrityHash,
+        changeDescription: v1.changeDescription,
+      },
+      {
+        version: v2.version,
+        createdAt: v2.createdAt,
+        createdByName: v2.createdByName,
+        integrityHash: v2.integrityHash,
+        changeDescription: v2.changeDescription,
+      }
+    );
 
-    // Compute field-level diffs
-    const diffs: any[] = [];
-    const compareObjects = (obj1: any, obj2: any, path: string = '') => {
-      const allKeys = new Set([...Object.keys(obj1 || {}), ...Object.keys(obj2 || {})]);
-      allKeys.forEach(key => {
-        const fullPath = path ? `${path}.${key}` : key;
-        const val1 = obj1?.[key];
-        const val2 = obj2?.[key];
-        if (JSON.stringify(val1) !== JSON.stringify(val2)) {
-          if (typeof val1 === 'object' && typeof val2 === 'object' && val1 && val2 && !Array.isArray(val1)) {
-            compareObjects(val1, val2, fullPath);
-          } else {
-            diffs.push({ field: fullPath, oldValue: val1, newValue: val2 });
-          }
-        }
-      });
-    };
-
-    compareObjects(data1, data2);
-
-    res.json({
-      version1: { version: v1.version, createdAt: v1.createdAt, createdByName: v1.createdByName },
-      version2: { version: v2.version, createdAt: v2.createdAt, createdByName: v2.createdByName },
-      diffs,
-      totalChanges: diffs.length,
-    });
+    res.json(diffReport);
   } catch (error) {
+    console.error('Failed to compute version diff:', error);
     res.status(500).json({ error: 'Failed to compute diff.' });
   }
 });

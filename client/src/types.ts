@@ -267,6 +267,9 @@ export interface Report {
   createdAt: string;
   updatedAt: string;
   versions?: ReportVersion[];
+  isHistoricalVersion?: boolean;
+  latestVersion?: number;
+  revisionReason?: string;
 }
 
 export interface ReportVersion {
@@ -297,15 +300,88 @@ export interface AuditLog {
   createdAt: string;
 }
 
+export interface ChangedObservationDetail {
+  testType: string;
+  label: string;
+  appliedLoad?: number;
+  observedValue?: any;
+  originalMpe?: string;
+  simulatedMpe?: string;
+  originalStatus: string;
+  simulatedStatus: string;
+  explanation: string;
+}
+
+export interface ChangedCalculationDetail {
+  testType: string;
+  label: string;
+  originalValue: string;
+  simulatedValue: string;
+  explanation: string;
+}
+
+export interface EvaluationSimulationResult {
+  evaluationId: string;
+  evaluationNumber: string;
+  evaluationDate: string;
+  instrumentId: string;
+  instrumentPassportId: string;
+  instrumentManufacturer: string;
+  instrumentModel: string;
+  instrumentSerialNumber: string;
+  instrumentType: string;
+  accuracyClass: string;
+  laboratoryName: string;
+  originalOverallVerdict: 'PASS' | 'FAIL' | 'REVIEW';
+  simulatedOverallVerdict: 'PASS' | 'FAIL' | 'REVIEW';
+  statusChange: 'PASS_TO_FAIL' | 'PASS_TO_REVIEW' | 'FAIL_TO_PASS' | 'NO_CHANGE';
+  flipped: boolean;
+  impactDeltas: string[];
+  changedObservations: ChangedObservationDetail[];
+  changedCalculations: ChangedCalculationDetail[];
+  testResults: Array<{
+    testType: string;
+    originalVerdict: string;
+    simulatedVerdict: string;
+    flipped: boolean;
+  }>;
+}
+
 export interface SimulationRun {
   id: string;
   name: string;
   description?: string;
   baseRuleConfigId: string;
   simulatedRuleConfigId: string;
-  results: any[];
+  results: EvaluationSimulationResult[];
+  summary?: {
+    totalEvaluations: number;
+    flippedCount: number;
+    passToFailCount: number;
+    passToReviewCount: number;
+    unchangedCount: number;
+    affectedPercentage: number;
+  };
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+    instrumentType?: string;
+    accuracyClass?: string;
+  };
+  simulatedRuleConfig?: {
+    id: string;
+    version: string;
+    name: string;
+  };
+  baseRuleConfig?: {
+    id: string;
+    version: string;
+    name: string;
+  };
   totalEvaluations: number;
   flippedCount: number;
+  passToFailCount?: number;
+  passToReviewCount?: number;
   runById: string;
   runByName: string;
   createdAt: string;
@@ -323,11 +399,48 @@ export interface IntegrityVerification {
   fileName?: string;
 }
 
+export interface MetrologyDiffItem {
+  id: string;
+  category: 'OBSERVATION' | 'CALCULATION' | 'COMPLIANCE' | 'INSTRUMENT' | 'LABORATORY' | 'METADATA';
+  label: string;
+  testType?: string;
+  field: string;
+  oldValue: any;
+  newValue: any;
+  oldFormatted: string;
+  newFormatted: string;
+  impact: 'CRITICAL' | 'WARNING' | 'NEUTRAL';
+  description?: string;
+}
+
 export interface VersionDiff {
-  version1: { version: number; createdAt: string; createdByName: string };
-  version2: { version: number; createdAt: string; createdByName: string };
-  diffs: Array<{ field: string; oldValue: any; newValue: any }>;
-  totalChanges: number;
+  version1: {
+    version: number;
+    createdAt?: string;
+    createdByName?: string;
+    integrityHash?: string | null;
+    changeDescription?: string | null;
+  };
+  version2: {
+    version: number;
+    createdAt?: string;
+    createdByName?: string;
+    integrityHash?: string | null;
+    changeDescription?: string | null;
+  };
+  summary?: {
+    totalChanges: number;
+    observationChanges: number;
+    calculationChanges: number;
+    complianceChanges: number;
+    specificationChanges: number;
+    metadataChanges: number;
+    verdictFlipped: boolean;
+    originalOverallVerdict: string;
+    newOverallVerdict: string;
+  };
+  diffs: MetrologyDiffItem[];
+  totalChanges?: number;
 }
 
 export interface DashboardStats {

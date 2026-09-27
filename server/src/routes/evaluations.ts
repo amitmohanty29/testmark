@@ -165,6 +165,11 @@ router.post('/', authenticateToken, requireRoles(['TESTING_OFFICER', 'ADMIN']), 
     const evaluationNumber = await generateEvaluationId();
     const state = initialState || 'Draft';
 
+    const activeRuleConfig = await prisma.ruleConfiguration.findFirst({
+      where: { isActive: true, isDraft: false },
+      orderBy: { createdAt: 'desc' },
+    });
+
     const evaluation = await prisma.evaluation.create({
       data: {
         evaluationNumber,
@@ -173,9 +178,10 @@ router.post('/', authenticateToken, requireRoles(['TESTING_OFFICER', 'ADMIN']), 
         evaluationDate: evaluationDate ? new Date(evaluationDate) : new Date(),
         testingOfficerId: assignedTestingOfficerId,
         reviewingOfficerId: reviewingOfficerId || null,
-        standardReference: standardReference || 'OIML R 76-1 (Edition 2006)',
+        standardReference: activeRuleConfig ? activeRuleConfig.standardRef : (standardReference || 'OIML R 76-1 (Edition 2006)'),
         generalRemarks: generalRemarks?.trim() || null,
         state,
+        ruleConfigId: activeRuleConfig ? activeRuleConfig.id : null,
       },
       include: {
         instrument: true,

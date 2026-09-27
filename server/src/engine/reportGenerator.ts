@@ -384,4 +384,156 @@ export class ReportGenerator {
     const docxDoc = new Document({ sections });
     return await Packer.toBuffer(docxDoc);
   }
+
+  static async generateSimulationReportPDF(input: {
+    simulation: any;
+    results: any[];
+    summary: any;
+    filters?: any;
+  }): Promise<Buffer> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const chunks: Buffer[] = [];
+        const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+        doc.on('data', (c: Buffer) => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+        const { simulation, results, summary, filters } = input;
+
+        // ── TOP WARNING BANNER: SIMULATION ONLY ──
+        doc.rect(0, 0, 595.28, 65).fill('#7f1d1d'); // deep red
+        doc.font('Helvetica-Bold').fontSize(14).fillColor('#ffffff')
+          .text('⚠️ SIMULATION ONLY — NOT A LEGAL RECORD', 40, 16, { align: 'center' });
+        doc.fontSize(8).font('Helvetica')
+          .text('Official Metrological Impact Assessment Sandbox • Non-Binding Regulatory Forecast', 40, 34, { align: 'center' })
+          .text('Does NOT alter, amend, or invalidate any legal certificates issued under Legal Metrology Act 2009', 40, 46, { align: 'center' });
+
+        doc.fillColor('#1f2937').moveDown(2.5);
+
+        // ── Title & Meta ──
+        doc.font('Helvetica-Bold').fontSize(16).fillColor('#111827').text(simulation.name || 'OIML Rule Impact Simulation');
+        doc.fontSize(9).font('Helvetica').fillColor('#4b5563')
+          .text(simulation.description || 'Impact assessment of candidate tolerance tightening across historical evaluation records.');
+        doc.moveDown(0.5);
+
+        doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#d1d5db').lineWidth(1).stroke();
+        doc.moveDown(0.6);
+
+        // Meta details grid
+        const metaY = doc.y;
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#374151');
+        doc.text('Execution Timestamp: ', 40, metaY, { continued: true }).font('Helvetica').text(new Date(simulation.createdAt || Date.now()).toLocaleString('en-IN'));
+        doc.font('Helvetica-Bold').text('Conducted By: ', 40, doc.y, { continued: true }).font('Helvetica').text(simulation.runByName || 'Regulatory Administrator');
+        doc.font('Helvetica-Bold').text('Candidate Draft Rule: ', 40, doc.y, { continued: true }).font('Helvetica').text(simulation.simulatedRuleConfig?.version || simulation.simulatedRuleConfigId || 'Simulated Draft');
+
+        const filterY = metaY;
+        doc.font('Helvetica-Bold').text('Filter (Date Range): ', 320, filterY, { continued: true }).font('Helvetica').text(`${filters?.startDate || 'Earliest'} to ${filters?.endDate || 'Latest'}`);
+        doc.font('Helvetica-Bold').text('Filter (Instrument): ', 320, doc.y, { continued: true }).font('Helvetica').text(filters?.instrumentType || 'All Instrument Categories');
+        doc.font('Helvetica-Bold').text('Filter (Accuracy): ', 320, doc.y, { continued: true }).font('Helvetica').text(filters?.accuracyClass || 'All Accuracy Classes');
+
+        doc.moveDown(1.2);
+
+        // ── Summary Metrics KPI Cards ──
+        const kpiY = doc.y;
+        const boxWidth = 118;
+        const boxHeight = 48;
+        const boxes = [
+          { label: 'EVALUATIONS', value: String(summary.totalEvaluations || results.length), color: '#f3f4f6', border: '#d1d5db', textColor: '#111827' },
+          { label: 'VERDICTS SHIFTED', value: String(summary.flippedCount || 0), color: '#fee2e2', border: '#fca5a5', textColor: '#991b1b' },
+          { label: 'PASS → FAIL', value: String(summary.passToFailCount || 0), color: '#fef2f2', border: '#f87171', textColor: '#b91c1c' },
+          { label: 'PASS → REVIEW', value: String(summary.passToReviewCount || 0), color: '#fffbeb', border: '#fde68a', textColor: '#b45309' },
+        ];
+
+        boxes.forEach((b, idx) => {
+          const x = 40 + idx * (boxWidth + 14);
+          doc.rect(x, kpiY, boxWidth, boxHeight).fillAndStroke(b.color, b.border);
+          doc.font('Helvetica-Bold').fontSize(14).fillColor(b.textColor).text(b.value, x, kpiY + 8, { width: boxWidth, align: 'center' });
+          doc.font('Helvetica-Bold').fontSize(7).fillColor('#6b7280').text(b.label, x, kpiY + 28, { width: boxWidth, align: 'center' });
+        });
+
+        doc.y = kpiY + boxHeight + 15;
+
+        // ── Comparison Table ──
+        doc.font('Helvetica-Bold').fontSize(11).fillColor('#111827').text('Evaluations Comparison & Impact Breakdown');
+        doc.font('Helvetica').fontSize(8).fillColor('#6b7280').text('Each affected historical record with specific observations and calculations that would deviate under the draft standard.');
+        doc.moveDown(0.5);
+
+        // Table header
+        const thY = doc.y;
+        doc.rect(40, thY, 515, 20).fill('#e5e7eb');
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1f2937');
+        doc.text('EVALUATION', 46, thY + 6);
+        doc.text('INSTRUMENT & CLASS', 140, thY + 6);
+        doc.text('ORIGINAL', 290, thY + 6);
+        doc.text('SIMULATED', 360, thY + 6);
+        doc.text('OUTCOME DELTA', 440, thY + 6);
+
+        doc.y = thY + 24;
+
+        results.slice(0, 35).forEach((r: any) => {
+          if (doc.y > 720) {
+            doc.addPage();
+            // Re-print top banner on subsequent pages
+            doc.rect(0, 0, 595.28, 30).fill('#7f1d1d');
+            doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff')
+              .text('⚠️ SIMULATION ONLY — NOT A LEGAL RECORD', 40, 10, { align: 'center' });
+            doc.y = 45;
+          }
+
+          const rowY = doc.y;
+          const isFlipped = r.flipped || r.verdictFlipped || r.originalOverallVerdict !== r.simulatedOverallVerdict;
+          const bgColor = isFlipped ? '#fef2f2' : '#ffffff';
+
+          doc.rect(40, rowY, 515, 26).fillAndStroke(bgColor, '#e5e7eb');
+          doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#006c51')
+            .text(r.evaluationNumber, 46, rowY + 5);
+          doc.font('Helvetica').fontSize(6.5).fillColor('#6b7280')
+            .text(r.instrumentPassportId || '', 46, rowY + 14);
+
+          doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1f2937')
+            .text(`${r.instrumentManufacturer || ''} ${r.instrumentModel || ''}`.trim() || 'NAWI', 140, rowY + 5, { width: 140, ellipsis: true });
+          doc.font('Helvetica').fontSize(6.5).fillColor('#6b7280')
+            .text(r.accuracyClass || 'Class III', 140, rowY + 14);
+
+          doc.font('Helvetica-Bold').fontSize(7.5).fillColor(r.originalOverallVerdict === 'PASS' ? '#065f46' : '#991b1b')
+            .text(r.originalOverallVerdict || 'PASS', 290, rowY + 8);
+
+          doc.font('Helvetica-Bold').fontSize(7.5).fillColor(r.simulatedOverallVerdict === 'PASS' ? '#065f46' : r.simulatedOverallVerdict === 'REVIEW' ? '#b45309' : '#991b1b')
+            .text(r.simulatedOverallVerdict || 'PASS', 360, rowY + 8);
+
+          doc.font('Helvetica-Bold').fontSize(7.5).fillColor(isFlipped ? '#b91c1c' : '#059669')
+            .text(isFlipped ? `SHIFT: ${r.originalOverallVerdict} → ${r.simulatedOverallVerdict}` : 'UNCHANGED (COMPLIANT)', 440, rowY + 8);
+
+          doc.y = rowY + 28;
+
+          // If there are changed observations or notes, print them
+          const deltas = r.changedObservations || r.impactDeltas || [];
+          if (deltas.length > 0) {
+            deltas.slice(0, 2).forEach((d: any) => {
+              doc.font('Helvetica-Oblique').fontSize(6.5).fillColor('#7f1d1d')
+                .text(`   ↳ ${d.explanation || d.label || d}`, 55, doc.y);
+              doc.moveDown(0.2);
+            });
+          }
+        });
+
+        // ── Footer on all pages ──
+        const pages = doc.bufferedPageRange();
+        for (let i = 0; i < pages.count; i++) {
+          doc.switchToPage(i);
+          doc.fontSize(7).font('Helvetica-Bold').fillColor('#991b1b')
+            .text(
+              '⚠️ SIMULATION ONLY — NOT A LEGAL RECORD • Ministry of Consumer Affairs, Food & Public Distribution • Directorate of Legal Metrology',
+              40,
+              800,
+              { align: 'center', width: 515 }
+            );
+        }
+
+        doc.end();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
 }

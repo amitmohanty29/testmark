@@ -317,8 +317,9 @@ export const api = {
     return data;
   },
 
-  async getReport(id: string): Promise<{ report: Report }> {
-    const res = await fetch(`${API_BASE}/reports/${id}`, { headers: getAuthHeaders() });
+  async getReport(id: string, version?: number): Promise<{ report: Report }> {
+    const url = version ? `${API_BASE}/reports/${id}?version=${version}` : `${API_BASE}/reports/${id}`;
+    const res = await fetch(url, { headers: getAuthHeaders() });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     return data;
@@ -333,10 +334,14 @@ export const api = {
     return data;
   },
 
-  async reviseReport(id: string, changeDescription?: string): Promise<{ report: Report; message: string }> {
+  async reviseReport(
+    id: string,
+    payload: { changeDescription: string; updatedObservations?: any[]; testTypeToUpdate?: string; customRemarks?: string } | string
+  ): Promise<{ report: Report; newVersion: number; message: string }> {
+    const body = typeof payload === 'string' ? { changeDescription: payload } : payload;
     const res = await fetch(`${API_BASE}/reports/${id}/revise`, {
       method: 'POST', headers: getAuthHeaders(),
-      body: JSON.stringify({ changeDescription }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -371,9 +376,9 @@ export const api = {
     return data;
   },
 
-  getReportExportUrl(id: string, format: 'pdf' | 'docx'): string {
+  getReportExportUrl(id: string, format: 'pdf' | 'docx', version?: number): string {
     const token = localStorage.getItem('marksure_token');
-    return `${API_BASE}/reports/${id}/export/${format}?token=${token}`;
+    return `${API_BASE}/reports/${id}/export/${format}?token=${token}${version ? `&version=${version}` : ''}`;
   },
 
   async getReportVersions(id: string): Promise<{ versions: ReportVersion[] }> {
@@ -433,8 +438,28 @@ export const api = {
     return data;
   },
 
+  async activateRuleConfig(id: string): Promise<{ ruleConfig: RuleConfiguration; message: string }> {
+    const res = await fetch(`${API_BASE}/rule-configs/${id}/activate`, {
+      method: 'POST', headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
   // ═══ SIMULATOR ═══
-  async runSimulation(params: { name: string; description?: string; baseRuleConfigId?: string; simulatedRuleConfigId: string }): Promise<{ simulation: SimulationRun; message: string }> {
+  async runSimulation(params: {
+    name: string;
+    description?: string;
+    baseRuleConfigId?: string;
+    simulatedRuleConfigId: string;
+    filters?: {
+      startDate?: string;
+      endDate?: string;
+      instrumentType?: string;
+      accuracyClass?: string;
+    };
+  }): Promise<{ simulation: SimulationRun; message: string }> {
     const res = await fetch(`${API_BASE}/simulator/run`, {
       method: 'POST', headers: getAuthHeaders(),
       body: JSON.stringify(params),
@@ -449,6 +474,18 @@ export const api = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     return data;
+  },
+
+  async getSimulationRun(id: string): Promise<{ run: SimulationRun }> {
+    const res = await fetch(`${API_BASE}/simulator/runs/${id}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  getSimulationExportUrl(id: string, format: 'pdf' | 'csv'): string {
+    const token = localStorage.getItem('marksure_token');
+    return `${API_BASE}/simulator/runs/${id}/export/${format}?token=${token}`;
   },
 
   // ═══ DASHBOARD ═══

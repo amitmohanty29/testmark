@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../prisma';
 import { authenticateToken, requireRoles, AuthenticatedRequest } from '../middleware/auth';
 import { OIML_R76_CLASSES, VERIFICATION_MULTIPLIERS } from '../engine/oimlR76Config';
+import { logAudit } from '../middleware/auditLogger';
 
 const router = Router();
 
@@ -126,5 +127,57 @@ router.get('/active/current', authenticateToken, async (_req: AuthenticatedReque
     res.status(500).json({ error: 'Failed to fetch active rule configuration.' });
   }
 });
+
+// Activate a rule configuration as the official live standard (Admin only)
+router.post('/:id/activate', authenticateToken, requireRoles(['ADMIN']),
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const id = req.params.id as string;
+      const target = await prisma.ruleConfiguration.findUnique({ where: { id } });
+      if (!target) {
+        res.status(404).json({ error: 'Rule configuration not found.' });
+        return;
+      }
+
+      // Deactivate all existing active configs
+      await prisma.ruleConfiguration.updateMany({
+        where: { isActive: true },
+        data: { isActive: false },
+      });
+
+      // Activate this configuration and promote from draft to official live
+      const activated = await prisma.ruleConfiguration.update({
+        where: { id },
+        data: {
+          isActive: true,
+          isDraft: false,
+        },
+      });
+
+      await logAudit({
+        entityType: 'RULE_CONFIG',
+        entityId: target.id,
+        action: 'RULE_CONFIG_ACTIVATED',
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorRole: req.user!.role,
+        description: `Rule configuration "${target.version}" (${target.name}) officially activated as the live national standard for new evaluations.`,
+        metadata: {
+          version: target.version,
+          name: target.name,
+          standardRef: target.standardRef,
+        },
+      });
+
+      res.json({
+        ruleConfig: { ...activated, configuration: JSON.parse(activated.configuration) },
+        message: `Rule configuration "${activated.version}" is now officially the live standard for all new evaluations.`,
+      });
+    } catch (error) {
+      console.error('Failed to activate rule configuration:', error);
+      res.status(500).json({ error: 'Failed to activate rule configuration.' });
+    }
+  }
+);
 
 export default router;
