@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String       @id @default(uuid())
+  email               String       @unique
+  password            String
+  name                String
+  role                String       // "TESTING_OFFICER" | "REVIEWING_OFFICER" | "ADMIN"
+  designation         String?
+  department          String?      @default("Legal Metrology Division")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  assignedEvaluations Evaluation[] @relation("TestingOfficer")
+  reviewedEvaluations Evaluation[] @relation("ReviewingOfficer")
+  createdInstruments  Instrument[] @relation("CreatedByUser")
+}
+
+model Laboratory {
+  id                  String       @id @default(uuid())
+  code                String       @unique
+  name                String
+  address             String
+  accreditationNumber String
+  contactEmail        String?
+  contactPhone        String?
+  isActive            Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+
+  evaluations         Evaluation[]
+}
+
+model Instrument {
+  id                   String            @id @default(uuid())
+  passportId           String            @unique // e.g. "IN-NAWI-2026-0082"
+  manufacturer         String
+  model                String
+  serialNumber         String            @unique
+  instrumentType       String
+  accuracyClass        String            // "Class I" | "Class II" | "Class III" | "Class IV"
+  maxCapacity          Float             // Max
+  minCapacity          Float             // Min
+  scaleIntervalE       Float             // e (verification scale interval)
+  scaleIntervalD       Float?            // d (actual scale interval)
+  verificationUnits    String            @default("g")
+  capacityRangeType    String            @default("Single-Interval")
+  tareRange            String?
+  temperatureRange     String?           @default("+10°C to +40°C")
+  powerSupply          String?           @default("230V AC, 50Hz / Battery backup")
+  technicalSpecs       String?
+  status               String            @default("ACTIVE")
+  createdById          String?
+  createdBy            User?             @relation("CreatedByUser", fields: [createdById], references: [id])
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  documents            InstrumentDocument[]
+  evaluations          Evaluation[]
+  timelineEvents       TimelineEvent[]
+}
+
+model InstrumentDocument {
+  id           String     @id @default(uuid())
+  title        String
+  fileName     String
+  fileUrl      String
+  fileType     String?
+  fileSize     Int?
+  instrumentId String
+  instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  uploadedAt   DateTime   @default(now())
+}
+
+model Evaluation {
+  id                 String          @id @default(uuid())
+  evaluationNumber   String          @unique // e.g. "EV-2026-0041"
+  instrumentId       String
+  instrument         Instrument      @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  laboratoryId       String
+  laboratory         Laboratory      @relation(fields: [laboratoryId], references: [id])
+  evaluationDate     DateTime        @default(now())
+  testingOfficerId   String
+  testingOfficer     User            @relation("TestingOfficer", fields: [testingOfficerId], references: [id])
+  reviewingOfficerId String?
+  reviewingOfficer   User?           @relation("ReviewingOfficer", fields: [reviewingOfficerId], references: [id])
+  
+  state              String          @default("Draft") // "Draft" | "In Progress" | "Under Review" | "Completed"
+  
+  standardReference  String          @default("OIML R 76-1 (Edition 2006)")
+  patternApprovalNo  String?
+  generalRemarks     String?
+  reviewRemarks      String?
+  completedAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  timelineEvents     TimelineEvent[]
+}
+
+model TimelineEvent {
+  id           String      @id @default(uuid())
+  instrumentId String
+  instrument   Instrument  @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  evaluationId String?
+  evaluation   Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  eventType    String
+  title        String
+  description  String
+  officerName  String
+  officerRole  String
+  createdAt    DateTime    @default(now())
+}

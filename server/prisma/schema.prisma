@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String       @id @default(uuid())
+  email            String       @unique
+  password         String
+  name             String
+  role             String       // "TESTING_OFFICER" | "REVIEWING_OFFICER" | "ADMIN"
+  designation      String?
+  department       String?      @default("Legal Metrology Division")
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  assignedEvaluations Evaluation[] @relation("TestingOfficer")
+  reviewedEvaluations Evaluation[] @relation("ReviewingOfficer")
+  createdInstruments  Instrument[] @relation("CreatedByUser")
+}
+
+model Laboratory {
+  id                  String       @id @default(uuid())
+  code                String       @unique
+  name                String
+  address             String
+  accreditationNumber String
+  contactEmail        String?
+  contactPhone        String?
+  isActive            Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+
+  evaluations         Evaluation[]
+}
+
+model Instrument {
+  id                   String            @id @default(uuid())
+  passportId           String            @unique // e.g. "IN-NAWI-2026-0082"
+  manufacturer         String
+  model                String
+  serialNumber         String            @unique
+  instrumentType       String            // "Electronic Non-Automatic Weighing Instrument (NAWI)", "Retail Price-Computing Scale", "Industrial Platform Scale", "Precision Laboratory Balance", "Weighbridge"
+  accuracyClass        String            // "Class I" | "Class II" | "Class III" | "Class IV"
+  maxCapacity          Float             // Max
+  minCapacity          Float             // Min
+  scaleIntervalE       Float             // e (verification scale interval)
+  scaleIntervalD       Float?            // d (actual scale interval)
+  verificationUnits    String            @default("g") // "g", "kg", "mg", "t"
+  capacityRangeType    String            @default("Single-Interval") // "Single-Interval" | "Multi-Interval" | "Multiple Range"
+  tareRange            String?           // e.g. "-100% Max"
+  temperatureRange     String?           @default("+10°C to +40°C")
+  powerSupply          String?           @default("230V AC, 50Hz / Battery backup")
+  technicalSpecs       String?           // Detailed JSON or description
+  status               String            @default("ACTIVE") // "ACTIVE" | "IN_EVALUATION" | "CERTIFIED" | "REJECTED"
+  createdById          String?
+  createdBy            User?             @relation("CreatedByUser", fields: [createdById], references: [id])
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  documents            InstrumentDocument[]
+  evaluations          Evaluation[]
+  timelineEvents       TimelineEvent[]
+}
+
+model InstrumentDocument {
+  id           String     @id @default(uuid())
+  title        String
+  fileName     String
+  fileUrl      String
+  fileType     String?
+  fileSize     Int?
+  instrumentId String
+  instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  uploadedAt   DateTime   @default(now())
+}
+
+model Evaluation {
+  id                String          @id @default(uuid())
+  evaluationNumber  String          @unique // e.g. "EV-2026-0041"
+  instrumentId      String
+  instrument        Instrument      @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  laboratoryId      String
+  laboratory        Laboratory      @relation(fields: [laboratoryId], references: [id])
+  evaluationDate    DateTime        @default(now())
+  testingOfficerId  String
+  testingOfficer    User            @relation("TestingOfficer", fields: [testingOfficerId], references: [id])
+  reviewingOfficerId String?
+  reviewingOfficer  User?           @relation("ReviewingOfficer", fields: [reviewingOfficerId], references: [id])
+  
+  state             String          @default("Draft") // "Draft" | "In Progress" | "Under Review" | "Completed"
+  
+  // OIML R-76 evaluation metadata
+  standardReference String          @default("OIML R 76-1 (Edition 2006)")
+  patternApprovalNo String?
+  generalRemarks    String?
+  reviewRemarks     String?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  timelineEvents    TimelineEvent[]
+  testRecords       TestRecord[]
+}
+
+model TimelineEvent {
+  id           String      @id @default(uuid())
+  instrumentId String
+  instrument   Instrument  @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  evaluationId String?
+  evaluation   Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  eventType    String      // "PASSPORT_CREATED" | "EVALUATION_INITIATED" | "STATE_TRANSITION" | "TEST_LOGGED" | "REVIEW_FEEDBACK" | "CERTIFIED"
+  title        String
+  description  String
+  officerName  String
+  officerRole  String
+  createdAt    DateTime    @default(now())
+}
+
+model TestRecord {
+  id                  String           @id @default(uuid())
+  evaluationId        String
+  evaluation          Evaluation       @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  testType            String           // "WEIGHING_PERFORMANCE" | "REPEATABILITY" | "ECCENTRICITY" | "TARE"
+  status              String           @default("DRAFT") // "DRAFT" | "PASS" | "FAIL" | "REVIEW"
+  environmentalData   String?          // JSON: temperature, humidity, pressure, instrumentLevel, notes
+  testInputs          String?          // JSON: verificationType, testMethod, unit, loadPoints
+  observations        String?          // JSON: recorded rows
+  calculationResults  String?          // JSON: calculated errors, maxError, MPEs
+  complianceDetails   String?          // JSON: verdict, anomalies, whyBreakdown
+  notes               String?
+  testedById          String?
+  testedByName        String?
+  completedAt         DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  attachments         TestAttachment[]
+}
+
+model TestAttachment {
+  id           String      @id @default(uuid())
+  testRecordId String
+  testRecord   TestRecord  @relation(fields: [testRecordId], references: [id], onDelete: Cascade)
+  title        String
+  fileName     String
+  fileUrl      String
+  fileType     String?     // "PHOTO" | "DOCUMENT" | "CALIBRATION_SHEET"
+  fileSize     Int?
+  uploadedAt   DateTime    @default(now())
+}

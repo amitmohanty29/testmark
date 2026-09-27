@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gov-primary: #006c51;
+  --gov-primary-hover: #005842;
+  --gov-primary-dark: #044332;
+  --gov-bg: #fbfaf6;
+  --gov-surface: #ffffff;
+  --gov-border: #e8e3d5;
+  --gov-text: #231f18;
+  --gov-muted: #6b6353;
+  --gov-saffron: #ff8800;
+  --gov-saffron-dark: #cc5500;
+}
+
+@layer base {
+  body {
+    background-color: var(--gov-bg);
+    color: var(--gov-text);
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  h1, h2, h3, .font-heading {
+    font-family: 'Noto Serif', Georgia, serif;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Government Component Styles */
+@layer components {
+  /* Official Primary Button styled after dfpd.gov.in .btn-primary */
+  .btn-gov-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-sm text-sm font-semibold text-white bg-[#006c51] hover:bg-[#005842] active:bg-[#044332] shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#006c51] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-gov-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-sm text-sm font-medium text-gov-sand-900 bg-gov-sand-200 hover:bg-gov-sand-300 active:bg-gov-sand-400 border border-gov-sand-300 shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-gov-sand-400;
+  }
+
+  .btn-gov-outline {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-sm text-sm font-semibold text-[#006c51] bg-white border border-[#006c51] hover:bg-gov-green-50 active:bg-gov-green-100 shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#006c51];
+  }
+
+  /* Government Card */
+  .gov-card {
+    @apply bg-white border border-[#e5dfd1] rounded shadow-[0_2px_4px_rgba(0,44,34,0.04)] overflow-hidden;
+  }
+
+  .gov-card-header {
+    @apply px-5 py-3.5 bg-[#f6f4ed] border-b border-[#e5dfd1] flex items-center justify-between;
+  }
+
+  /* Form Elements */
+  .gov-label {
+    @apply block text-xs font-semibold uppercase tracking-wider text-gov-sand-800 mb-1.5;
+  }
+
+  .gov-input {
+    @apply w-full px-3 py-2 text-sm bg-white border border-[#d6cfbe] rounded-sm text-gov-sand-900 focus:outline-none focus:border-[#006c51] focus:ring-1 focus:ring-[#006c51] transition-colors placeholder:text-gov-sand-400 disabled:bg-gov-sand-100 disabled:text-gov-sand-500;
+  }
+
+  .gov-select {
+    @apply w-full px-3 py-2 text-sm bg-white border border-[#d6cfbe] rounded-sm text-gov-sand-900 focus:outline-none focus:border-[#006c51] focus:ring-1 focus:ring-[#006c51] transition-colors;
+  }
+
+  /* Official Stamps */
+  .official-stamp {
+    @apply border-2 border-dashed border-[#006c51] text-[#006c51] px-3 py-1 font-serif text-xs font-bold tracking-widest uppercase rounded rotate-[-2deg] inline-block;
+  }
+
+  .official-stamp-gold {
+    @apply border-2 border-solid border-[#a37b12] text-[#a37b12] bg-[#fbf5e6] px-3 py-1 font-serif text-xs font-bold tracking-widest uppercase rounded inline-block shadow-sm;
+  }
+}
+
+/* Indian National Flag Ribbon */
+.tricolor-bar {
+  background: linear-gradient(
+    to right,
+    #ff9933 0%,
+    #ff9933 33.33%,
+    #ffffff 33.33%,
+    #ffffff 66.66%,
+    #138808 66.66%,
+    #138808 100%
+  );
+  height: 4px;
+  width: 100%;
+}
+
+/* Subtle parchment background texture */
+.bg-parchment {
+  background-color: #fbfaf6;
+  background-image: radial-gradient(#ece6d8 0.75px, transparent 0.75px);
+  background-size: 24px 24px;
+}
