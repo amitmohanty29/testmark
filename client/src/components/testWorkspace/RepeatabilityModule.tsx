@@ -10,7 +10,8 @@ import {
   XCircle, 
   Sparkles, 
   Info, 
-  Clock 
+  Clock,
+  RefreshCw 
 } from 'lucide-react';
 import { 
   Instrument, 
@@ -73,12 +74,37 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
 
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState<'DRAFT' | 'FINALIZE' | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showMeWhyOpen, setShowMeWhyOpen] = useState(false);
 
+  // Sync state if existingRecord changes or is updated
   useEffect(() => {
-    if (runs.length === 0) {
+    if (existingRecord) {
+      if (existingRecord.observations && existingRecord.observations.length > 0) {
+        setRuns(existingRecord.observations);
+      }
+      if (existingRecord.complianceDetails) {
+        setComplianceResult(existingRecord.complianceDetails);
+      }
+      if (existingRecord.notes !== undefined) {
+        setNotes(existingRecord.notes || '');
+      }
+      if (existingRecord.environmentalData) {
+        setEnvironmentalData((prev) => ({ ...prev, ...existingRecord.environmentalData }));
+      }
+      if (existingRecord.testInputs?.nominalLoad) {
+        setNominalLoad(existingRecord.testInputs.nominalLoad);
+      }
+      if (existingRecord.testInputs?.verificationType) {
+        setVerificationType(existingRecord.testInputs.verificationType);
+      }
+    }
+  }, [existingRecord]);
+
+  useEffect(() => {
+    if (runs.length === 0 && (!existingRecord?.observations || existingRecord.observations.length === 0)) {
       // Default to 3 standard runs per OIML R-76 A.4.10
       setRuns([
         { runIndex: 1, appliedLoad: nominalLoad, indication: nominalLoad, deltaL: 0 },
@@ -125,8 +151,9 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
     }
   };
 
-  const handleSave = async (statusOverride?: 'DRAFT' | 'PASS' | 'FAIL' | 'REVIEW') => {
+  const handleSave = async (statusOverride: 'DRAFT' | 'PASS' | 'FAIL' | 'REVIEW') => {
     setSaving(true);
+    setSavingAction(statusOverride === 'DRAFT' ? 'DRAFT' : 'FINALIZE');
     setErrorMsg(null);
     setSaveSuccessMsg(null);
 
@@ -145,12 +172,16 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
       if (res.complianceResult) {
         setComplianceResult(res.complianceResult);
       }
-      setSaveSuccessMsg('Repeatability test entries saved.');
-      setTimeout(() => setSaveSuccessMsg(null), 4000);
+      const msg = statusOverride === 'DRAFT'
+        ? 'Partial draft saved successfully. Entries persisted to database.'
+        : `Repeatability module finalized with verdict: ${res.record.status}!`;
+      setSaveSuccessMsg(msg);
+      setTimeout(() => setSaveSuccessMsg(null), 6000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to save test record');
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
@@ -460,31 +491,72 @@ export const RepeatabilityModule: React.FC<RepeatabilityModuleProps> = ({
         readOnly={readOnly}
       />
 
-      {/* Save & Resume Controls */}
+      {/* Save & Resume Controls with Direct Feedback */}
       {!readOnly && (
-        <div className="bg-[#fcfbf9] p-4 rounded-lg border border-[#ded7c4] flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-gov-sand-600">
-            <Clock className="w-4 h-4 text-[#006c51]" />
-            <span>Save and resume anytime without losing partial entries.</span>
-          </div>
+        <div className="space-y-3">
+          {saveSuccessMsg && (
+            <div className="p-3 bg-emerald-50 border-l-4 border-emerald-600 text-xs text-emerald-900 flex items-center justify-between rounded shadow-xs animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-semibold">{saveSuccessMsg}</span>
+              </div>
+              <span className="text-[10px] font-mono uppercase bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded font-bold">
+                Saved to Database
+              </span>
+            </div>
+          )}
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleSave('DRAFT')}
-              disabled={saving}
-              className="btn-gov-secondary text-xs flex items-center gap-1.5"
-            >
-              <Save className="w-3.5 h-3.5" /> Save Partial Draft
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSave(complianceResult?.verdict || 'PASS')}
-              disabled={saving || runs.length < 2}
-              className="btn-gov-primary text-xs flex items-center gap-1.5"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" /> Finalize Repeatability Module
-            </button>
+          {errorMsg && (
+            <div className="p-3 bg-red-50 border-l-4 border-red-600 text-xs text-red-900 flex items-center gap-2 rounded shadow-xs animate-fadeIn">
+              <XCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <span className="font-semibold">{errorMsg}</span>
+            </div>
+          )}
+
+          <div className="bg-[#fcfbf9] p-4 rounded-lg border border-[#ded7c4] flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2 text-xs text-gov-sand-600">
+              <Clock className="w-4 h-4 text-[#006c51]" />
+              <span>Save and resume anytime without losing partial entries.</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleSave('DRAFT')}
+                disabled={saving}
+                className="btn-gov-secondary text-xs flex items-center gap-1.5 min-w-[140px] justify-center"
+              >
+                {savingAction === 'DRAFT' ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#006c51]" />
+                    <span>Saving Draft...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Partial Draft</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSave(complianceResult?.verdict || 'PASS')}
+                disabled={saving || runs.length < 2}
+                className="btn-gov-primary text-xs flex items-center gap-1.5 min-w-[180px] justify-center"
+              >
+                {savingAction === 'FINALIZE' ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Finalizing Module...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Finalize Repeatability Module</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

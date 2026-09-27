@@ -12,15 +12,20 @@ import {
   QrCode, 
   Check, 
   Clock, 
-  Award,
-  Hash,
-  ArrowRight,
-  ExternalLink
+  Award, 
+  Hash, 
+  ArrowRight, 
+  ExternalLink,
+  Upload,
+  FileCheck
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 export const IntegrityVerify: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const [verifyMode, setVerifyMode] = useState<'ID' | 'FILE'>('ID');
   const [reportIdInput, setReportIdInput] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [verification, setVerification] = useState<IntegrityVerification | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +36,12 @@ export const IntegrityVerify: React.FC = () => {
 
   useEffect(() => {
     loadRecentFinalized();
-  }, []);
+    const queryId = searchParams.get('reportId') || searchParams.get('id');
+    if (queryId) {
+      setReportIdInput(queryId);
+      handleVerify(queryId);
+    }
+  }, [searchParams]);
 
   const loadRecentFinalized = async () => {
     try {
@@ -54,6 +64,23 @@ export const IntegrityVerify: React.FC = () => {
       setVerification(result);
     } catch (err: any) {
       setError(err.message || `No finalized report found for Report ID: ${target}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!file) return;
+    setSelectedFile(file);
+    setLoading(true);
+    setError(null);
+    setVerification(null);
+
+    try {
+      const result = await api.verifyReportByPdfUpload(file);
+      setVerification(result);
+    } catch (err: any) {
+      setError(err.message || 'Failed to verify uploaded PDF certificate.');
     } finally {
       setLoading(false);
     }
@@ -87,66 +114,137 @@ export const IntegrityVerify: React.FC = () => {
         </p>
       </div>
 
-      {/* Verification Input Box */}
+      {/* Mode Selector Tabs: Report ID vs PDF Upload */}
       <div className="gov-card p-6">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleVerify();
-          }}
-          className="space-y-4"
-        >
-          <label className="gov-label text-xs">Enter Report ID or Verification Token</label>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-gov-sand-400" />
-              <input
-                type="text"
-                placeholder="e.g. RPT-2026-0001"
-                value={reportIdInput}
-                onChange={(e) => setReportIdInput(e.target.value)}
-                className="gov-input pl-10 text-xs w-full py-2.5 font-mono"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-gov-primary text-xs px-6 py-2.5 shrink-0"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Verifying Cryptographic Ledger...
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4" /> Verify Report Integrity
-                </span>
-              )}
-            </button>
-          </div>
+        <div className="flex border-b border-[#ded7c4] mb-5">
+          <button
+            type="button"
+            onClick={() => { setVerifyMode('ID'); setError(null); }}
+            className={`pb-3 px-4 text-xs font-bold font-serif uppercase tracking-wider flex items-center gap-2 border-b-2 transition-colors ${
+              verifyMode === 'ID'
+                ? 'border-[#006c51] text-[#006c51]'
+                : 'border-transparent text-gov-sand-500 hover:text-gov-sand-800'
+            }`}
+          >
+            <Search className="w-4 h-4" />
+            1. Enter Report ID / Verification Hash
+          </button>
+          <button
+            type="button"
+            onClick={() => { setVerifyMode('FILE'); setError(null); }}
+            className={`pb-3 px-4 text-xs font-bold font-serif uppercase tracking-wider flex items-center gap-2 border-b-2 transition-colors ${
+              verifyMode === 'FILE'
+                ? 'border-[#006c51] text-[#006c51]'
+                : 'border-transparent text-gov-sand-500 hover:text-gov-sand-800'
+            }`}
+          >
+            <Upload className="w-4 h-4" />
+            2. Upload Official PDF Certificate
+          </button>
+        </div>
 
-          {/* Quick Click Finalized Reports */}
-          {recentReports.length > 0 && (
-            <div className="pt-3 border-t border-[#ece7d8] flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-[11px] text-gov-sand-500 font-medium">Quick Verify Sample:</span>
-              {recentReports.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => {
-                    setReportIdInput(r.reportId);
-                    handleVerify(r.reportId);
-                  }}
-                  className="font-mono text-[11px] px-2.5 py-1 bg-[#faf8f2] hover:bg-gov-green-50 text-[#006c51] rounded border border-[#ded7c4] transition-colors"
-                >
-                  {r.reportId}
-                </button>
-              ))}
+        {verifyMode === 'ID' ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleVerify();
+            }}
+            className="space-y-4"
+          >
+            <label className="gov-label text-xs">Enter Report ID (e.g. RPT-2026-0001) or 64-character SHA-256 Hash</label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-3 w-4 h-4 text-gov-sand-400" />
+                <input
+                  type="text"
+                  placeholder="e.g. RPT-2026-0001"
+                  value={reportIdInput}
+                  onChange={(e) => setReportIdInput(e.target.value)}
+                  className="gov-input pl-10 text-xs w-full py-2.5 font-mono"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-gov-primary text-xs px-6 py-2.5 shrink-0"
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Verifying Cryptographic Ledger...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4" /> Verify Report Integrity
+                  </span>
+                )}
+              </button>
             </div>
-          )}
-        </form>
+
+            {/* Quick Click Finalized Reports */}
+            {recentReports.length > 0 && (
+              <div className="pt-3 border-t border-[#ece7d8] flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-[11px] text-gov-sand-500 font-medium">Quick Verify Sample:</span>
+                {recentReports.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => {
+                      setReportIdInput(r.reportId);
+                      handleVerify(r.reportId);
+                    }}
+                    className="font-mono text-[11px] px-2.5 py-1 bg-[#faf8f2] hover:bg-gov-green-50 text-[#006c51] rounded border border-[#ded7c4] transition-colors"
+                  >
+                    {r.reportId}
+                  </button>
+                ))}
+              </div>
+            )}
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <label className="gov-label text-xs">Select or Drag & Drop Signed OIML R-76 Certificate PDF</label>
+            <div className="border-2 border-dashed border-[#ded7c4] hover:border-[#006c51] rounded-lg p-8 text-center transition-colors bg-[#fdfcf9]">
+              <div className="w-12 h-12 rounded-full bg-[#006c51]/10 text-[#006c51] mx-auto flex items-center justify-center mb-3">
+                <Upload className="w-6 h-6" />
+              </div>
+              <p className="text-xs font-semibold text-gov-sand-800">
+                Click to browse or drop an exported PDF report
+              </p>
+              <p className="text-[11px] text-gov-sand-500 mt-1">
+                The cryptographic engine extracts the document fingerprint and verifies it against the immutable National Ledger.
+              </p>
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                id="pdf-verify-input"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileUpload(file);
+                }}
+                className="hidden"
+              />
+              <label
+                htmlFor="pdf-verify-input"
+                className="btn-gov-primary text-xs inline-flex items-center gap-1.5 mt-4 cursor-pointer"
+              >
+                <FileCheck className="w-3.5 h-3.5" /> Select PDF Document
+              </label>
+              {selectedFile && (
+                <div className="mt-3 text-xs font-mono text-gov-sand-700 bg-white p-2 rounded border border-[#ded7c4] inline-block">
+                  Selected: <strong>{selectedFile.name}</strong> ({Math.round(selectedFile.size / 1024)} KB)
+                </div>
+              )}
+            </div>
+            {loading && (
+              <div className="p-3 bg-blue-50 text-blue-900 border border-blue-200 rounded text-xs flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-blue-700 border-t-transparent rounded-full animate-spin" />
+                <span>Computing SHA-256 digest from uploaded PDF bytes and verifying against blockchain ledger...</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Verification Error */}
@@ -175,10 +273,8 @@ export const IntegrityVerify: React.FC = () => {
               )}
             </div>
 
-            <h2 className="text-xl font-bold font-serif tracking-wide uppercase">
-              {verification.verified
-                ? 'Document Integrity Confirmed'
-                : 'Integrity Violation Detected'}
+            <h2 className="text-xl sm:text-2xl font-bold font-serif tracking-wide uppercase">
+              {verification.verdict || (verification.verified ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original')}
             </h2>
             <p className="text-xs text-emerald-100 mt-1 max-w-lg mx-auto">
               {verification.reason}

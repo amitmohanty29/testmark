@@ -359,6 +359,18 @@ export const api = {
     return data;
   },
 
+  async verifyReportByPdfUpload(file: File): Promise<IntegrityVerification> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/reports/verify-upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to verify uploaded PDF');
+    return data;
+  },
+
   getReportExportUrl(id: string, format: 'pdf' | 'docx'): string {
     const token = localStorage.getItem('marksure_token');
     return `${API_BASE}/reports/${id}/export/${format}?token=${token}`;

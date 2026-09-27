@@ -4,6 +4,7 @@ import { authenticateToken, requireRoles, AuthenticatedRequest } from '../middle
 import { upload } from '../middleware/upload';
 import { OimlComplianceEngine, TestComplianceResult } from '../engine/complianceEngine';
 import { VerificationType } from '../engine/calculationEngine';
+import { logAudit } from '../middleware/auditLogger';
 
 const router = Router();
 
@@ -256,7 +257,9 @@ router.put(
             );
           }
 
-          if (complianceResult) {
+          if (status === 'DRAFT') {
+            calculatedStatus = 'DRAFT';
+          } else if (complianceResult) {
             calculatedStatus = complianceResult.verdict;
           }
         } catch (calcErr) {
@@ -322,6 +325,17 @@ router.put(
           officerName: req.user!.name,
           officerRole: req.user!.role,
         },
+      });
+
+      await logAudit({
+        entityType: 'TEST_RECORD',
+        entityId: savedRecord.id,
+        action: calculatedStatus === 'DRAFT' ? 'UPDATED' : 'FINALIZED',
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorRole: req.user!.role,
+        description: `Test module [${testType}] saved with status: [${calculatedStatus}]`,
+        evaluationId,
       });
 
       res.json({

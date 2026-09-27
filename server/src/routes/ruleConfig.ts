@@ -24,7 +24,8 @@ router.get('/', authenticateToken, async (_req: AuthenticatedRequest, res: Respo
 // Get single rule config
 router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const config = await prisma.ruleConfiguration.findUnique({ where: { id: req.params.id } });
+    const id = req.params.id as string;
+    const config = await prisma.ruleConfiguration.findUnique({ where: { id } });
     if (!config) { res.status(404).json({ error: 'Rule configuration not found.' }); return; }
     res.json({ ruleConfig: { ...config, configuration: JSON.parse(config.configuration) } });
   } catch (error) {
@@ -70,13 +71,14 @@ router.post('/', authenticateToken, requireRoles(['ADMIN']),
 router.put('/:id', authenticateToken, requireRoles(['ADMIN']),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      const id = req.params.id as string;
       const { name, description, configuration, isActive, isDraft } = req.body;
 
-      const existing = await prisma.ruleConfiguration.findUnique({ where: { id: req.params.id } });
+      const existing = await prisma.ruleConfiguration.findUnique({ where: { id } });
       if (!existing) { res.status(404).json({ error: 'Rule configuration not found.' }); return; }
 
       const updated = await prisma.ruleConfiguration.update({
-        where: { id: req.params.id },
+        where: { id },
         data: {
           ...(name !== undefined && { name }),
           ...(description !== undefined && { description }),

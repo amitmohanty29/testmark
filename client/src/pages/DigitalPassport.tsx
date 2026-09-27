@@ -25,7 +25,12 @@ import {
   Layers,
   Award,
   Lock,
-  FileCheck2
+  FileCheck2,
+  Image as ImageIcon,
+  ZoomIn,
+  Copy,
+  Check,
+  X
 } from 'lucide-react';
 import { CreateEvaluationModal } from '../components/evaluations/CreateEvaluationModal';
 import { useAuth } from '../context/AuthContext';
@@ -38,6 +43,8 @@ export const DigitalPassport: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEvaluationModalOpen, setIsEvaluationModalOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; title?: string } | null>(null);
+  const [copiedPassportId, setCopiedPassportId] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -93,6 +100,103 @@ export const DigitalPassport: React.FC = () => {
       laboratoryName: e.laboratory?.name,
     }))
   );
+
+  // Compile unified chronological lifecycle timeline
+  interface UnifiedTimelineItem {
+    id: string;
+    date: string;
+    type: 'REGISTRATION' | 'EVALUATION' | 'TEST_RUN' | 'REPORT' | 'EVENT';
+    title: string;
+    description: string;
+    badge?: string;
+    badgeColor?: string;
+    officer?: string;
+    evaluationId?: string;
+    reportId?: string;
+    attachments?: any[];
+  }
+
+  const unifiedTimeline: UnifiedTimelineItem[] = [];
+
+  // 1. Permanent Registration
+  if (passport.createdAt) {
+    unifiedTimeline.push({
+      id: `reg-${passport.id}`,
+      date: passport.createdAt,
+      type: 'REGISTRATION',
+      title: 'Instrument Enrolled & Digital Passport Created',
+      description: `Instrument registered in the National Legal Metrology database. Permanent Passport ID ${passport.passportId} assigned as lifetime single source of truth.`,
+      badge: 'REGISTERED',
+      badgeColor: 'bg-emerald-100 text-emerald-800',
+      officer: passport.createdBy?.name || 'Metrology Officer',
+    });
+  }
+
+  // 2. Evaluations, Test Runs & Reports
+  (passport.evaluations || []).forEach((ev: any) => {
+    unifiedTimeline.push({
+      id: `eval-${ev.id}`,
+      date: ev.evaluationDate || ev.createdAt,
+      type: 'EVALUATION',
+      title: `Evaluation Session: ${ev.evaluationNumber}`,
+      description: `Testing Protocol: ${ev.standardReference} | Lab: ${ev.laboratory?.name || 'Testing Lab'} | State: ${ev.state}. ${ev.generalRemarks || ''}`,
+      badge: ev.state,
+      badgeColor: ev.state === 'Completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800',
+      officer: ev.testingOfficer?.name,
+      evaluationId: ev.id,
+    });
+
+    (ev.testRecords || []).forEach((tr: any) => {
+      unifiedTimeline.push({
+        id: `test-${tr.id}`,
+        date: tr.completedAt || tr.createdAt,
+        type: 'TEST_RUN',
+        title: `Metrological Test: ${tr.testType.replace(/_/g, ' ')} (${tr.status})`,
+        description: tr.notes || `Test point observations evaluated under OIML R-76 tolerances. Final verdict: ${tr.status}.`,
+        badge: tr.status,
+        badgeColor: tr.status === 'PASS' ? 'bg-emerald-100 text-emerald-800' : tr.status === 'FAIL' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800',
+        officer: tr.testedByName || ev.testingOfficer?.name,
+        evaluationId: ev.id,
+        attachments: tr.attachments || [],
+      });
+    });
+
+    (ev.reports || []).forEach((rp: any) => {
+      unifiedTimeline.push({
+        id: `rpt-${rp.id}`,
+        date: rp.finalizedAt || rp.createdAt,
+        type: 'REPORT',
+        title: `Test Report Issued: ${rp.reportId} (v${rp.version})`,
+        description: rp.integrityHash
+          ? `Finalized & cryptographically sealed with SHA-256 Digest: ${rp.integrityHash}`
+          : `Draft report generated under ${rp.ruleConfig?.version || ev.standardReference}.`,
+        badge: rp.status,
+        badgeColor: rp.status === 'FINALIZED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800',
+        officer: rp.generatedByName || ev.reviewingOfficer?.name,
+        evaluationId: ev.id,
+        reportId: rp.id,
+      });
+    });
+  });
+
+  // 3. Custom events
+  (passport.timelineEvents || []).forEach((te: any) => {
+    if (!unifiedTimeline.some((u) => u.title === te.title && Math.abs(new Date(u.date).getTime() - new Date(te.createdAt).getTime()) < 60000)) {
+      unifiedTimeline.push({
+        id: `event-${te.id}`,
+        date: te.createdAt,
+        type: 'EVENT',
+        title: te.title,
+        description: te.description,
+        badge: 'LEDGER',
+        badgeColor: 'bg-gov-sand-200 text-gov-sand-800',
+        officer: te.officerName,
+        evaluationId: te.evaluationId,
+      });
+    }
+  });
+
+  unifiedTimeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 sm:px-6 lg:px-8 print:p-0">
@@ -172,34 +276,51 @@ export const DigitalPassport: React.FC = () => {
           </div>
         </div>
 
-        {/* Passport Overview Bar */}
+        {/* Passport Summary Header Bar */}
         <div className="bg-[#fcfbf9] px-6 py-4 border-b border-[#e5dfd1] grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
           <div>
-            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">Instrument Status</span>
-            <div className="mt-1">
-              <InstrumentStatusBadge status={passport.status} />
+            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">Current Compliance Status</span>
+            <div className="mt-1 flex items-center gap-1.5">
+              {passport.summary.completedEvaluations > 0 ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-700" /> CERTIFIED OIML R-76
+                </span>
+              ) : passport.summary.activeEvaluations > 0 ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                  <Clock className="w-3.5 h-3.5 text-amber-700" /> EVALUATION IN PROGRESS
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-gov-sand-200 text-gov-sand-800 border border-gov-sand-300">
+                  PENDING CERTIFICATION
+                </span>
+              )}
             </div>
           </div>
           <div>
-            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">Accuracy Class</span>
+            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">Current Accuracy Class</span>
             <div className="mt-1">
               <AccuracyClassBadge accuracyClass={passport.accuracyClass} />
             </div>
           </div>
           <div>
-            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">Evaluations Tied</span>
+            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">Total Evaluations to Date</span>
             <span className="mt-1 text-sm font-bold text-gov-sand-900 block font-mono">
-              {passport.summary.totalEvaluations} Session(s) ({passport.summary.completedEvaluations} Completed)
+              {passport.summary.totalEvaluations} Session{passport.summary.totalEvaluations === 1 ? '' : 's'}
+              <span className="text-[10px] font-sans font-normal text-gov-sand-600 ml-1">
+                ({passport.summary.completedEvaluations} Certified)
+              </span>
             </span>
           </div>
           <div>
-            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">First Enrolled</span>
-            <span className="mt-1 text-xs text-gov-sand-900 block font-medium">
-              {new Date(passport.createdAt).toLocaleDateString('en-IN', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              })}
+            <span className="text-gov-sand-500 block uppercase text-[10px] font-bold">Last Evaluation Date</span>
+            <span className="mt-1 text-xs text-gov-sand-900 block font-mono font-semibold">
+              {passport.summary.lastEvaluationDate
+                ? new Date(passport.summary.lastEvaluationDate).toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : 'None to date'}
             </span>
           </div>
         </div>
@@ -440,31 +561,38 @@ export const DigitalPassport: React.FC = () => {
                 Permanent Digital Passport Timeline & Verification History
               </h2>
               <p className="text-[11px] text-gov-sand-600 mt-0.5">
-                Every evaluation, OIML test log, officer endorsement and state revision is cryptographically bound to this instrument.
+                Full chronological lifecycle: registration &rarr; evaluations &rarr; test runs with inline evidence photos &rarr; cryptographically sealed reports.
               </p>
             </div>
             <span className="text-xs font-mono font-bold bg-[#006c51]/10 text-[#006c51] px-2.5 py-1 rounded">
-              {passport.timelineEvents?.length || 0} Ledger Events
+              {unifiedTimeline.length} Lifetime Events
             </span>
           </div>
 
           {/* Timeline Feed */}
           <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#ded7c4]">
-            {passport.timelineEvents && passport.timelineEvents.length > 0 ? (
-              passport.timelineEvents.map((evt: TimelineEvent) => (
-                <div key={evt.id} className="relative group">
+            {unifiedTimeline.length > 0 ? (
+              unifiedTimeline.map((item) => (
+                <div key={item.id} className="relative group">
                   {/* Timeline bullet */}
                   <div className="absolute -left-[19px] top-1 w-4 h-4 rounded-full bg-white border-2 border-[#006c51] flex items-center justify-center">
                     <div className="w-1.5 h-1.5 rounded-full bg-[#006c51]" />
                   </div>
 
-                  <div className="bg-[#faf8f2] p-4 rounded border border-[#ded7c4] hover:border-[#006c51]/60 transition-colors shadow-2xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5">
-                      <h4 className="text-xs font-bold text-gov-sand-900 flex items-center gap-1.5">
-                        <span>{evt.title}</span>
-                      </h4>
+                  <div className="bg-[#faf8f2] p-4 rounded border border-[#ded7c4] hover:border-[#006c51]/60 transition-colors shadow-2xs space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs font-bold text-gov-sand-900">
+                          {item.title}
+                        </h4>
+                        {item.badge && (
+                          <span className={`px-2 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${item.badgeColor || 'bg-gov-sand-200 text-gov-sand-800'}`}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] font-mono text-gov-sand-500">
-                        {new Date(evt.createdAt).toLocaleString('en-IN', {
+                        {new Date(item.date).toLocaleString('en-IN', {
                           day: '2-digit',
                           month: 'short',
                           year: 'numeric',
@@ -474,22 +602,83 @@ export const DigitalPassport: React.FC = () => {
                       </span>
                     </div>
 
-                    <p className="text-xs text-gov-sand-700 leading-relaxed">
-                      {evt.description}
+                    <p className="text-xs text-gov-sand-700 leading-relaxed font-sans">
+                      {item.description}
                     </p>
 
-                    <div className="mt-2.5 pt-2 border-t border-[#ece7d8] flex items-center justify-between text-[10px] text-gov-sand-500">
+                    {/* Inline Evidence Photo / Document Thumbnails */}
+                    {item.attachments && item.attachments.length > 0 && (
+                      <div className="pt-2 border-t border-[#ece7d8]">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gov-sand-600 block mb-1.5 flex items-center gap-1">
+                          <ImageIcon className="w-3 h-3 text-[#006c51]" />
+                          Inline Evidence & Calibration Attachments ({item.attachments.length}):
+                        </span>
+                        <div className="flex flex-wrap gap-2.5">
+                          {item.attachments.map((att: any) => {
+                            const isImg = att.fileUrl && (att.fileType?.startsWith('image') || att.fileName?.match(/\.(png|jpe?g|webp|gif|svg)$/i));
+                            return (
+                              <div
+                                key={att.id}
+                                className="group/att relative bg-white border border-[#ded7c4] rounded p-1.5 shadow-2xs hover:border-[#006c51] transition-all flex flex-col items-center"
+                              >
+                                {isImg ? (
+                                  <div
+                                    onClick={() => setPreviewImage({ url: att.fileUrl, title: att.title || att.fileName })}
+                                    className="cursor-pointer relative overflow-hidden rounded"
+                                    title="Click to enlarge evidence"
+                                  >
+                                    <img
+                                      src={att.fileUrl}
+                                      alt={att.title || att.fileName}
+                                      className="w-16 h-16 object-cover rounded group-hover/att:scale-105 transition-transform"
+                                    />
+                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/att:opacity-100 flex items-center justify-center transition-opacity">
+                                      <ZoomIn className="w-4 h-4 text-white" />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <a
+                                    href={att.fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="w-16 h-16 bg-[#f7f5ee] rounded flex flex-col items-center justify-center text-gov-sand-600 hover:text-[#006c51]"
+                                  >
+                                    <FileText className="w-6 h-6 mb-1" />
+                                    <span className="text-[8px] uppercase font-mono">FILE</span>
+                                  </a>
+                                )}
+                                <span className="text-[9px] text-gov-sand-700 font-medium truncate max-w-[72px] mt-1 text-center" title={att.title || att.fileName}>
+                                  {att.title || att.fileName}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-[#ece7d8] flex items-center justify-between text-[10px] text-gov-sand-500">
                       <span className="font-semibold text-gov-sand-800">
-                        Officer: {evt.officerName} ({evt.officerRole.replace('_', ' ')})
+                        {item.officer ? `Officer: ${item.officer}` : 'System Verified'}
                       </span>
-                      {evt.evaluationId && (
-                        <Link
-                          to={`/evaluations/${evt.evaluationId}`}
-                          className="text-[#006c51] hover:underline font-mono"
-                        >
-                          View Evaluation Record &rarr;
-                        </Link>
-                      )}
+                      <div className="flex items-center gap-3">
+                        {item.evaluationId && (
+                          <Link
+                            to={`/evaluations/${item.evaluationId}`}
+                            className="text-[#006c51] hover:underline font-mono"
+                          >
+                            View Evaluation &rarr;
+                          </Link>
+                        )}
+                        {item.reportId && (
+                          <Link
+                            to={`/reports/${item.reportId}`}
+                            className="text-[#006c51] hover:underline font-mono"
+                          >
+                            View Report &rarr;
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -535,6 +724,38 @@ export const DigitalPassport: React.FC = () => {
         preselectedInstrumentId={passport.id}
         onCreated={() => loadPassport(passport.id)}
       />
+      {/* Evidence Lightbox Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="relative max-w-3xl max-h-[90vh] bg-white rounded-lg p-3 shadow-2xl flex flex-col items-center animate-fadeIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-gov-sand-900 text-white hover:bg-red-600 flex items-center justify-center shadow-lg transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            {previewImage.title && (
+              <p className="text-xs font-bold text-gov-sand-900 mb-2 truncate max-w-xl text-center font-mono">
+                {previewImage.title}
+              </p>
+            )}
+            <img
+              src={previewImage.url}
+              alt={previewImage.title || 'Evidence Preview'}
+              className="max-h-[75vh] max-w-full rounded object-contain border border-[#ded7c4]"
+            />
+            <div className="mt-2 text-[10px] text-gov-sand-500 font-mono">
+              Official Metrology Test Observation Attachment
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -103,8 +103,8 @@ router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
   }
 });
 
-// Digital Passport view (Single Source of Truth)
-router.get('/:id/passport', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+// Digital Passport view (Single Source of Truth) - accessible via stable URL/ID
+router.get('/:id/passport', async (req, res): Promise<void> => {
   try {
     const id = req.params.id as string;
 
@@ -119,8 +119,12 @@ router.get('/:id/passport', authenticateToken, async (req: AuthenticatedRequest,
             laboratory: true,
             testingOfficer: { select: { id: true, name: true, designation: true, department: true } },
             reviewingOfficer: { select: { id: true, name: true, designation: true, department: true } },
+            testRecords: {
+              include: { attachments: true },
+              orderBy: { createdAt: 'asc' },
+            },
             reports: {
-              include: { ruleConfig: true },
+              include: { ruleConfig: true, versions: true },
               orderBy: { createdAt: 'desc' },
             },
           },

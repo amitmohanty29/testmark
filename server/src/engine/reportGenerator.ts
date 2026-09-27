@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 interface ReportInput {
   report: any;
@@ -23,7 +24,7 @@ const GOLD = '#c9a227';
 export class ReportGenerator {
 
   static async generatePDF(input: ReportInput): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         const chunks: Buffer[] = [];
         const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
@@ -215,14 +216,37 @@ export class ReportGenerator {
           doc.moveDown(0.5);
         }
 
-        // Integrity
+        // Integrity Box with QR Code & Public Verification Link
+        const verifyUrl = `${process.env.APP_URL || 'http://localhost:5173'}/verify?reportId=${report.reportId}`;
+        let qrBuffer: Buffer | null = null;
+        try {
+          qrBuffer = await QRCode.toBuffer(verifyUrl, { width: 120, margin: 1 });
+        } catch (e) {
+          console.error('Failed to generate QR code for PDF:', e);
+        }
+
         doc.moveDown(1);
-        doc.rect(50, doc.y, 495, 45).fillAndStroke('#f0fdf4', GREEN);
-        const hashY = doc.y + 8;
-        doc.font('Helvetica-Bold').fontSize(9).fillColor(GREEN)
-          .text('Zero-Trust Report Integrity (SHA-256):', 60, hashY);
-        doc.font('Courier').fontSize(7).fillColor('#333')
-          .text(report.integrityHash || 'Hash generated upon finalization', 60, hashY + 14, { width: 475 });
+        const boxY = doc.y;
+        doc.rect(50, boxY, 495, 75).fillAndStroke('#f0fdf4', GREEN);
+        
+        if (qrBuffer) {
+          doc.image(qrBuffer, 470, boxY + 5, { width: 65, height: 65 });
+        }
+
+        doc.font('Helvetica-Bold').fontSize(10).fillColor(GREEN)
+          .text('Zero-Trust Cryptographic Report Integrity (SHA-256):', 60, boxY + 8);
+        doc.font('Courier').fontSize(7.5).fillColor('#333')
+          .text(report.integrityHash || 'Hash generated upon finalization', 60, boxY + 22, { width: 400 });
+        
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(DARK)
+          .text('Public Verification Link: ', 60, boxY + 38, { continued: true })
+          .font('Helvetica').fillColor('#0066cc')
+          .text(verifyUrl, { link: verifyUrl, underline: true });
+
+        doc.font('Helvetica').fontSize(7.5).fillColor('#555')
+          .text('Scan the QR code or visit the public portal to verify document authenticity against the National Cryptographic Ledger.', 60, boxY + 52, { width: 400 });
+
+        doc.y = boxY + 85;
 
         // Signatures
         doc.moveDown(3);

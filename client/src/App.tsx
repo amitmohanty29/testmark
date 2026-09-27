@@ -119,14 +119,8 @@ export const App: React.FC = () => {
               }
             />
 
-            <Route
-              path="/passport/:id"
-              element={
-                <ProtectedRoute>
-                  <DigitalPassport />
-                </ProtectedRoute>
-              }
-            />
+            {/* USP 1: Permanent Lifetime Digital Passport (Stable Public URL/ID) */}
+            <Route path="/passport/:id" element={<DigitalPassport />} />
 
             {/* OIML Test Reports */}
             <Route
@@ -157,15 +151,8 @@ export const App: React.FC = () => {
               }
             />
 
-            {/* Differentiator 1: Zero-Trust Cryptographic Report Integrity Check */}
-            <Route
-              path="/verify"
-              element={
-                <ProtectedRoute>
-                  <IntegrityVerify />
-                </ProtectedRoute>
-              }
-            />
+            {/* USP 2: Public, No-Login Cryptographic Report Integrity Check */}
+            <Route path="/verify" element={<IntegrityVerify />} />
 
             {/* Differentiator 2: OIML Rule Impact Simulator */}
             <Route

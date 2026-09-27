@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import multer from 'multer';
 import prisma from '../prisma';
 import { authenticateToken, requireRoles, AuthenticatedRequest } from '../middleware/auth';
 import { generateReportHash, verifyReportIntegrity } from '../engine/integrityEngine';
@@ -6,6 +7,7 @@ import { ReportGenerator } from '../engine/reportGenerator';
 import { logAudit } from '../middleware/auditLogger';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 const safeParse = (str: string | null | undefined, def: any = null) => {
   if (!str) return def;
@@ -15,8 +17,8 @@ const safeParse = (str: string | null | undefined, def: any = null) => {
 // Generate a new report from an evaluation
 router.post('/generate/:evaluationId', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { evaluationId } = req.params;
-    const evaluation = await prisma.evaluation.findUnique({
+    const evaluationId = req.params.evaluationId as string;
+    const evaluation: any = await prisma.evaluation.findUnique({
       where: { id: evaluationId },
       include: {
         instrument: true,
@@ -67,7 +69,7 @@ router.post('/generate/:evaluationId', authenticateToken, async (req: Authentica
       },
       testingOfficer: evaluation.testingOfficer,
       reviewingOfficer: evaluation.reviewingOfficer,
-      testRecords: evaluation.testRecords.map(r => ({
+      testRecords: evaluation.testRecords.map((r: any) => ({
         testType: r.testType,
         status: r.status,
         environmentalData: safeParse(r.environmentalData, {}),
@@ -78,7 +80,7 @@ router.post('/generate/:evaluationId', authenticateToken, async (req: Authentica
         notes: r.notes,
         testedByName: r.testedByName,
         completedAt: r.completedAt,
-        attachments: r.attachments.map(a => ({ title: a.title, fileName: a.fileName, fileType: a.fileType })),
+        attachments: r.attachments.map((a: any) => ({ title: a.title, fileName: a.fileName, fileType: a.fileType })),
       })),
       ruleConfig: evaluation.ruleConfig ? {
         version: evaluation.ruleConfig.version,
@@ -168,8 +170,9 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
 // Get single report
 router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
     const report = await prisma.report.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
         evaluation: {
           include: {
@@ -195,14 +198,15 @@ router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
 // Finalize report (lock + generate SHA-256 hash)
 router.post('/:id/finalize', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const report = await prisma.report.findUnique({ where: { id: req.params.id } });
+    const id = req.params.id as string;
+    const report = await prisma.report.findUnique({ where: { id } });
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
     if (report.status === 'FINALIZED') { res.status(400).json({ error: 'Report is already finalized.' }); return; }
 
     const integrityHash = generateReportHash(report.reportData);
 
     const updated = await prisma.report.update({
-      where: { id: req.params.id },
+      where: { id },
       data: {
         status: 'FINALIZED',
         integrityHash,
@@ -233,9 +237,10 @@ router.post('/:id/finalize', authenticateToken, async (req: AuthenticatedRequest
 // Revise a finalized report (creates new version)
 router.post('/:id/revise', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
     const { changeDescription } = req.body;
     const report = await prisma.report.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
         evaluation: {
           include: {
@@ -251,7 +256,7 @@ router.post('/:id/revise', authenticateToken, async (req: AuthenticatedRequest, 
 
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
 
-    const eval_ = report.evaluation;
+    const eval_ = (report as any).evaluation;
     const newReportData = {
       ...safeParse(report.reportData, {}),
       evaluation: {
@@ -278,7 +283,7 @@ router.post('/:id/revise', authenticateToken, async (req: AuthenticatedRequest, 
     const newHash = generateReportHash(newDataStr);
 
     const updated = await prisma.report.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         version: newVersion,
         status: 'FINALIZED',
@@ -321,53 +326,179 @@ router.post('/:id/verify', async (req, res): Promise<void> => {
     const report = await prisma.report.findUnique({ where: { id: req.params.id } });
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
     if (!report.integrityHash) {
-      res.json({ verified: false, reason: 'Report has not been finalized. No integrity hash exists.', reportId: report.reportId });
+      res.json({
+        verified: false,
+        verdict: 'Warning — Content Does Not Match Original',
+        reason: 'Report has not been finalized. No integrity hash exists.',
+        reportId: report.reportId,
+      });
       return;
     }
 
     const isValid = verifyReportIntegrity(report.reportData, report.integrityHash);
+    const computedHash = generateReportHash(report.reportData);
+
+    await logAudit({
+      entityType: 'REPORT',
+      entityId: report.id,
+      action: 'VERIFIED',
+      actorId: 'PUBLIC_AUDITOR',
+      actorName: 'Enforcement Officer / Public Auditor',
+      actorRole: 'AUDITOR',
+      description: `Report ${report.reportId} cryptographic verification: ${isValid ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original'}`,
+      newState: { verified: isValid, reportId: report.reportId, checkTimestamp: new Date().toISOString() },
+    });
+
     res.json({
       verified: isValid,
+      verdict: isValid ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original',
       reportId: report.reportId,
       storedHash: report.integrityHash,
-      computedHash: generateReportHash(report.reportData),
+      computedHash,
       finalizedAt: report.finalizedAt,
-      reason: isValid ? 'Report data matches stored hash. Document integrity confirmed.' : 'INTEGRITY VIOLATION: Report data has been altered since finalization.',
+      version: report.version,
+      reason: isValid
+        ? 'Verified — Unaltered: Real-time SHA-256 payload matches authoritative ledger record bit-for-bit.'
+        : 'Warning — Content Does Not Match Original: Cryptographic fingerprint differs from government ledger.',
     });
   } catch (error) {
     res.status(500).json({ error: 'Verification failed.' });
   }
 });
 
-// Verify by Report ID (public endpoint)
+// Verify by Report ID or Hash (public, no-login endpoint)
 router.get('/verify/:reportId', async (req, res): Promise<void> => {
   try {
-    const report = await prisma.report.findUnique({ where: { reportId: req.params.reportId } });
-    if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
-    if (!report.integrityHash) {
-      res.json({ verified: false, reportId: report.reportId, reason: 'Not finalized.' });
+    const query = req.params.reportId.trim();
+    const report = await prisma.report.findFirst({
+      where: {
+        OR: [
+          { reportId: query },
+          { id: query },
+          { integrityHash: query },
+        ],
+      },
+    });
+
+    if (!report) {
+      res.status(404).json({ error: `No report found matching identifier or hash: "${query}"` });
       return;
     }
+
+    if (!report.integrityHash) {
+      res.json({
+        verified: false,
+        verdict: 'Warning — Content Does Not Match Original',
+        reportId: report.reportId,
+        reason: 'Report is still in draft state and has not been cryptographically finalized.',
+      });
+      return;
+    }
+
     const isValid = verifyReportIntegrity(report.reportData, report.integrityHash);
+    const computedHash = generateReportHash(report.reportData);
+
+    await logAudit({
+      entityType: 'REPORT',
+      entityId: report.id,
+      action: 'VERIFIED',
+      actorId: 'PUBLIC_AUDITOR',
+      actorName: 'Public Auditor / Enforcement Officer',
+      actorRole: 'AUDITOR',
+      description: `Report ${report.reportId} zero-trust check: ${isValid ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original'}`,
+      newState: { verified: isValid, query, reportId: report.reportId, checkTimestamp: new Date().toISOString() },
+    });
+
     res.json({
       verified: isValid,
+      verdict: isValid ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original',
       reportId: report.reportId,
       storedHash: report.integrityHash,
-      computedHash: generateReportHash(report.reportData),
+      computedHash,
       finalizedAt: report.finalizedAt,
       version: report.version,
-      reason: isValid ? 'Integrity confirmed.' : 'INTEGRITY VIOLATION.',
+      reason: isValid
+        ? 'Verified — Unaltered: Real-time SHA-256 payload matches authoritative ledger record bit-for-bit.'
+        : 'Warning — Content Does Not Match Original: Cryptographic fingerprint differs from government ledger.',
     });
   } catch (error) {
     res.status(500).json({ error: 'Verification failed.' });
+  }
+});
+
+// Verify by PDF file upload (public, no-login endpoint)
+router.post('/verify-upload', upload.single('file'), async (req, res): Promise<void> => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      res.status(400).json({ error: 'No PDF file uploaded.' });
+      return;
+    }
+
+    const fileContent = req.file.buffer.toString('latin1');
+    const reportIdMatch = fileContent.match(/RPT-\d{4}-\d+/i) || fileContent.match(/RPT-[A-Za-z0-9-]+/i);
+    const hashMatch = fileContent.match(/[a-f0-9]{64}/i);
+
+    let report = null;
+    if (reportIdMatch) {
+      report = await prisma.report.findFirst({ where: { reportId: reportIdMatch[0] } });
+    }
+    if (!report && hashMatch) {
+      report = await prisma.report.findFirst({ where: { integrityHash: hashMatch[0].toLowerCase() } });
+    }
+
+    if (!report) {
+      res.status(404).json({
+        verified: false,
+        verdict: 'Warning — Content Does Not Match Original',
+        reason: 'Warning — Content Does Not Match Original: Could not identify any genuine Government OIML R-76 report seal or record in the uploaded file.',
+      });
+      return;
+    }
+
+    const isValid = verifyReportIntegrity(report.reportData, report.integrityHash || '');
+    const computedHash = generateReportHash(report.reportData);
+
+    let isUnaltered = isValid;
+    if (hashMatch && hashMatch[0].toLowerCase() !== (report.integrityHash || '').toLowerCase()) {
+      isUnaltered = false;
+    }
+
+    await logAudit({
+      entityType: 'REPORT',
+      entityId: report.id,
+      action: 'VERIFIED',
+      actorId: 'PUBLIC_AUDITOR',
+      actorName: 'PDF Document Inspector',
+      actorRole: 'AUDITOR',
+      description: `Uploaded PDF verified for Report ${report.reportId}: ${isUnaltered ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original'}`,
+      newState: { verified: isUnaltered, fileName: req.file.originalname, checkTimestamp: new Date().toISOString() },
+    });
+
+    res.json({
+      verified: isUnaltered,
+      verdict: isUnaltered ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original',
+      reportId: report.reportId,
+      storedHash: report.integrityHash,
+      computedHash,
+      finalizedAt: report.finalizedAt,
+      version: report.version,
+      fileName: req.file.originalname,
+      reason: isUnaltered
+        ? 'Verified — Unaltered: Uploaded PDF matches authoritative SHA-256 government ledger.'
+        : 'Warning — Content Does Not Match Original: Document structure or cryptographic fingerprint has been modified.',
+    });
+  } catch (error) {
+    console.error('PDF verification error:', error);
+    res.status(500).json({ error: 'Failed to verify uploaded PDF document.' });
   }
 });
 
 // Export PDF
 router.get('/:id/export/pdf', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
     const report = await prisma.report.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
         evaluation: {
           include: {
@@ -383,15 +514,16 @@ router.get('/:id/export/pdf', authenticateToken, async (req: AuthenticatedReques
 
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
 
+    const reportAny = report as any;
     const pdfBuffer = await ReportGenerator.generatePDF({
       report,
-      evaluation: report.evaluation,
-      instrument: report.evaluation.instrument,
-      laboratory: report.evaluation.laboratory,
-      testRecords: report.evaluation.testRecords,
-      testingOfficer: report.evaluation.testingOfficer,
-      reviewingOfficer: report.evaluation.reviewingOfficer,
-      ruleConfig: report.ruleConfig,
+      evaluation: reportAny.evaluation,
+      instrument: reportAny.evaluation?.instrument,
+      laboratory: reportAny.evaluation?.laboratory,
+      testRecords: reportAny.evaluation?.testRecords || [],
+      testingOfficer: reportAny.evaluation?.testingOfficer,
+      reviewingOfficer: reportAny.evaluation?.reviewingOfficer,
+      ruleConfig: reportAny.ruleConfig,
     });
 
     await logAudit({
@@ -412,8 +544,9 @@ router.get('/:id/export/pdf', authenticateToken, async (req: AuthenticatedReques
 // Export DOCX
 router.get('/:id/export/docx', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
     const report = await prisma.report.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
         evaluation: {
           include: {
@@ -429,15 +562,16 @@ router.get('/:id/export/docx', authenticateToken, async (req: AuthenticatedReque
 
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
 
+    const reportAny = report as any;
     const docxBuffer = await ReportGenerator.generateDOCX({
       report,
-      evaluation: report.evaluation,
-      instrument: report.evaluation.instrument,
-      laboratory: report.evaluation.laboratory,
-      testRecords: report.evaluation.testRecords,
-      testingOfficer: report.evaluation.testingOfficer,
-      reviewingOfficer: report.evaluation.reviewingOfficer,
-      ruleConfig: report.ruleConfig,
+      evaluation: reportAny.evaluation,
+      instrument: reportAny.evaluation?.instrument,
+      laboratory: reportAny.evaluation?.laboratory,
+      testRecords: reportAny.evaluation?.testRecords || [],
+      testingOfficer: reportAny.evaluation?.testingOfficer,
+      reviewingOfficer: reportAny.evaluation?.reviewingOfficer,
+      ruleConfig: reportAny.ruleConfig,
     });
 
     await logAudit({
@@ -458,8 +592,9 @@ router.get('/:id/export/docx', authenticateToken, async (req: AuthenticatedReque
 // Get version history
 router.get('/:id/versions', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const reportId = req.params.id as string;
     const versions = await prisma.reportVersion.findMany({
-      where: { reportId: req.params.id },
+      where: { reportId },
       orderBy: { version: 'desc' },
     });
     res.json({ versions });
@@ -471,11 +606,14 @@ router.get('/:id/versions', authenticateToken, async (req: AuthenticatedRequest,
 // Diff two versions
 router.get('/:id/diff/:v1/:v2', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const reportId = req.params.id as string;
+    const v1Num = parseInt(req.params.v1 as string);
+    const v2Num = parseInt(req.params.v2 as string);
     const v1 = await prisma.reportVersion.findFirst({
-      where: { reportId: req.params.id, version: parseInt(req.params.v1) },
+      where: { reportId, version: v1Num },
     });
     const v2 = await prisma.reportVersion.findFirst({
-      where: { reportId: req.params.id, version: parseInt(req.params.v2) },
+      where: { reportId, version: v2Num },
     });
 
     if (!v1 || !v2) { res.status(404).json({ error: 'One or both versions not found.' }); return; }

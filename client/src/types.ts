@@ -313,12 +313,14 @@ export interface SimulationRun {
 
 export interface IntegrityVerification {
   verified: boolean;
+  verdict?: string;
   reportId: string;
   storedHash: string;
   computedHash: string;
   finalizedAt?: string;
   version?: number;
   reason: string;
+  fileName?: string;
 }
 
 export interface VersionDiff {

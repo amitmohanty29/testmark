@@ -41,7 +41,7 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
 // Get audit trail for a specific evaluation
 router.get('/evaluation/:evaluationId', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { evaluationId } = req.params;
+    const evaluationId = req.params.evaluationId as string;
 
     // Get evaluation-level audit logs
     const evalLogs = await prisma.auditLog.findMany({
