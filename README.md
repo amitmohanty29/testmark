@@ -76,9 +76,9 @@ MarkSure is an end-to-end digital metrology compliance and evaluation platform b
 
 | Role | Email | Password |
 |---|---|---|
-| **Testing Officer** | `officer@marksure.gov.in` | `password123` |
-| **Reviewing Officer** | `reviewer@marksure.gov.in` | `password123` |
-| **Admin** | `admin@marksure.gov.in` | `password123` |
+| **Testing Officer** | `officer.test@marksure.gov.in` | `Pass@123` |
+| **Reviewing Officer** | `officer.review@marksure.gov.in` | `Pass@123` |
+| **Admin** | `admin@marksure.gov.in` | `Pass@123` |
 
 ---
 
