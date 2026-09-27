@@ -10,6 +10,11 @@ import laboratoryRoutes from './routes/laboratories';
 import instrumentRoutes from './routes/instruments';
 import evaluationRoutes from './routes/evaluations';
 import testRoutes from './routes/tests';
+import reportRoutes from './routes/reports';
+import searchRoutes from './routes/search';
+import auditRoutes from './routes/audit';
+import ruleConfigRoutes from './routes/ruleConfig';
+import simulatorRoutes from './routes/simulator';
 import prisma from './prisma';
 
 const app = express();
@@ -54,6 +59,11 @@ app.use('/api/laboratories', laboratoryRoutes);
 app.use('/api/instruments', instrumentRoutes);
 app.use('/api/evaluations', testRoutes);
 app.use('/api/evaluations', evaluationRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/rule-configs', ruleConfigRoutes);
+app.use('/api/simulator', simulatorRoutes);
 
 // Global Error Handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

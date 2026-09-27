@@ -13,7 +13,12 @@ import { EvaluationsList } from './pages/EvaluationsList';
 import { EvaluationDetail } from './pages/EvaluationDetail';
 import { PassportsList } from './pages/PassportsList';
 import { DigitalPassport } from './pages/DigitalPassport';
-import { PlaceholderPage } from './pages/PlaceholderPage';
+import { ReportsList } from './pages/ReportsList';
+import { ReportDetail } from './pages/ReportDetail';
+import { NationalSearch } from './pages/NationalSearch';
+import { IntegrityVerify } from './pages/IntegrityVerify';
+import { RuleSimulator } from './pages/RuleSimulator';
+import { AuditLedger } from './pages/AuditLedger';
 
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -123,30 +128,61 @@ export const App: React.FC = () => {
               }
             />
 
+            {/* OIML Test Reports */}
             <Route
               path="/reports"
               element={
                 <ProtectedRoute>
-                  <PlaceholderPage
-                    title="OIML R-76 Test Report Generation Engine"
-                    moduleName="Automated Report Module"
-                    description="Standardized automated report generation and certificate formatting in accordance with OIML R 76-2 (Test Report Format). Will generate signed PDF test certificates directly from evaluation data."
-                    iconType="report"
-                  />
+                  <ReportsList />
                 </ProtectedRoute>
               }
             />
 
             <Route
+              path="/reports/:id"
+              element={
+                <ProtectedRoute>
+                  <ReportDetail />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* National Metrology Search */}
+            <Route
               path="/search"
               element={
                 <ProtectedRoute>
-                  <PlaceholderPage
-                    title="National Metrology Cross-Registry Search"
-                    moduleName="Unified Registry Search"
-                    description="Federated query interface across all State Legal Metrology Divisions, RRSL Regional Laboratories, and Pattern Approval directories."
-                    iconType="search"
-                  />
+                  <NationalSearch />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Differentiator 1: Zero-Trust Cryptographic Report Integrity Check */}
+            <Route
+              path="/verify"
+              element={
+                <ProtectedRoute>
+                  <IntegrityVerify />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Differentiator 2: OIML Rule Impact Simulator */}
+            <Route
+              path="/simulator"
+              element={
+                <ProtectedRoute>
+                  <RuleSimulator />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Differentiator 3: Complete Audit Ledger */}
+            <Route
+              path="/audit"
+              element={
+                <ProtectedRoute>
+                  <AuditLedger />
                 </ProtectedRoute>
               }
             />

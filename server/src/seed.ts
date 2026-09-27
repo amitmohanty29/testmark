@@ -338,6 +338,115 @@ async function main() {
     },
   });
 
+  // 7. Seed Rule Configurations
+  await prisma.ruleConfiguration.deleteMany();
+  const ruleV1 = await prisma.ruleConfiguration.create({
+    data: {
+      version: 'OIML-R76-2006-v1.0',
+      name: 'OIML R 76-1:2006 — Production Release',
+      description: 'Standard MPE tables and accuracy class definitions per OIML R 76-1 (Edition 2006). This is the default production rule set used for all legal metrology evaluations.',
+      standardRef: 'OIML R 76-1 (Edition 2006)',
+      configuration: JSON.stringify({
+        classes: {
+          'Class I':  { mpeBrackets: [{ minM: 0, maxM: 50000, mpeInE: 0.5 }, { minM: 50000, maxM: 200000, mpeInE: 1.0 }, { minM: 200000, maxM: Infinity, mpeInE: 1.5 }] },
+          'Class II': { mpeBrackets: [{ minM: 0, maxM: 5000, mpeInE: 0.5 }, { minM: 5000, maxM: 20000, mpeInE: 1.0 }, { minM: 20000, maxM: 100000, mpeInE: 1.5 }] },
+          'Class III':{ mpeBrackets: [{ minM: 0, maxM: 500, mpeInE: 0.5 }, { minM: 500, maxM: 2000, mpeInE: 1.0 }, { minM: 2000, maxM: 10000, mpeInE: 1.5 }] },
+          'Class IV': { mpeBrackets: [{ minM: 0, maxM: 50, mpeInE: 0.5 }, { minM: 50, maxM: 200, mpeInE: 1.0 }, { minM: 200, maxM: 1000, mpeInE: 1.5 }] },
+        },
+        verificationMultipliers: { INITIAL: 1.0, IN_SERVICE: 2.0 },
+      }),
+      isActive: true,
+      isDraft: false,
+    },
+  });
+
+  await prisma.ruleConfiguration.create({
+    data: {
+      version: 'OIML-R76-2006-v1.1-DRAFT',
+      name: 'OIML R 76 — Tightened MPE (Draft Proposal)',
+      description: 'Proposed stricter tolerances: 20% tighter MPE for Class III instruments. For simulation purposes only — NON-BINDING.',
+      standardRef: 'OIML R 76-1 (Edition 2006) — Amendment Proposal',
+      configuration: JSON.stringify({
+        classes: {
+          'Class I':  { mpeBrackets: [{ minM: 0, maxM: 50000, mpeInE: 0.5 }, { minM: 50000, maxM: 200000, mpeInE: 1.0 }, { minM: 200000, maxM: Infinity, mpeInE: 1.5 }], mpeTighteningFactor: 1.0 },
+          'Class II': { mpeBrackets: [{ minM: 0, maxM: 5000, mpeInE: 0.5 }, { minM: 5000, maxM: 20000, mpeInE: 1.0 }, { minM: 20000, maxM: 100000, mpeInE: 1.5 }], mpeTighteningFactor: 0.9 },
+          'Class III':{ mpeBrackets: [{ minM: 0, maxM: 500, mpeInE: 0.4 }, { minM: 500, maxM: 2000, mpeInE: 0.8 }, { minM: 2000, maxM: 10000, mpeInE: 1.2 }], mpeTighteningFactor: 0.8 },
+          'Class IV': { mpeBrackets: [{ minM: 0, maxM: 50, mpeInE: 0.5 }, { minM: 50, maxM: 200, mpeInE: 1.0 }, { minM: 200, maxM: 1000, mpeInE: 1.5 }], mpeTighteningFactor: 1.0 },
+        },
+        verificationMultipliers: { INITIAL: 1.0, IN_SERVICE: 2.0 },
+      }),
+      isActive: false,
+      isDraft: true,
+    },
+  });
+
+  // Link evaluations to rule config
+  await prisma.evaluation.updateMany({
+    data: { ruleConfigId: ruleV1.id },
+  });
+
+  // 8. Seed Reports and Audit Logs
+  await prisma.reportVersion.deleteMany();
+  await prisma.report.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.simulationRun.deleteMany();
+
+  // Generate a sample report for the completed evaluation
+  const { createHash } = await import('crypto');
+  const sampleReportData = JSON.stringify({
+    reportId: 'RPT-2026-0001',
+    evaluation: { evaluationNumber: eval1.evaluationNumber, state: 'Completed' },
+    instrument: { passportId: inst1.passportId, manufacturer: inst1.manufacturer, model: inst1.model, serialNumber: inst1.serialNumber, accuracyClass: inst1.accuracyClass },
+    laboratory: { name: 'CSIR - National Physical Laboratory (NPL) New Delhi', code: 'NPL-DEL-01' },
+    testingOfficer: { name: testingOfficer.name },
+    reviewingOfficer: { name: reviewingOfficer.name },
+    ruleConfig: { version: 'OIML-R76-2006-v1.0' },
+    generatedAt: '2026-02-19T10:00:00Z',
+  });
+  const sampleHash = createHash('sha256').update(sampleReportData, 'utf8').digest('hex');
+
+  const sampleReport = await prisma.report.create({
+    data: {
+      reportId: 'RPT-2026-0001',
+      evaluationId: eval1.id,
+      ruleConfigId: ruleV1.id,
+      version: 1,
+      status: 'FINALIZED',
+      reportData: sampleReportData,
+      integrityHash: sampleHash,
+      finalizedAt: new Date('2026-02-19T10:30:00Z'),
+      finalizedById: reviewingOfficer.id,
+      generatedById: testingOfficer.id,
+      generatedByName: testingOfficer.name,
+    },
+  });
+
+  await prisma.reportVersion.create({
+    data: {
+      reportId: sampleReport.id,
+      version: 1,
+      reportData: sampleReportData,
+      integrityHash: sampleHash,
+      changeDescription: 'Initial report generation and finalization',
+      createdById: testingOfficer.id,
+      createdByName: testingOfficer.name,
+    },
+  });
+
+  // Seed audit logs
+  await prisma.auditLog.createMany({
+    data: [
+      { entityType: 'EVALUATION', entityId: eval1.id, action: 'CREATED', actorId: testingOfficer.id, actorName: testingOfficer.name, actorRole: 'TESTING_OFFICER', description: `Evaluation ${eval1.evaluationNumber} initiated`, evaluationId: eval1.id },
+      { entityType: 'EVALUATION', entityId: eval1.id, action: 'STATE_CHANGE', actorId: testingOfficer.id, actorName: testingOfficer.name, actorRole: 'TESTING_OFFICER', description: 'State: Draft → In Progress', previousState: JSON.stringify({ state: 'Draft' }), newState: JSON.stringify({ state: 'In Progress' }), evaluationId: eval1.id },
+      { entityType: 'EVALUATION', entityId: eval1.id, action: 'STATE_CHANGE', actorId: testingOfficer.id, actorName: testingOfficer.name, actorRole: 'TESTING_OFFICER', description: 'State: In Progress → Under Review', previousState: JSON.stringify({ state: 'In Progress' }), newState: JSON.stringify({ state: 'Under Review' }), evaluationId: eval1.id },
+      { entityType: 'EVALUATION', entityId: eval1.id, action: 'STATE_CHANGE', actorId: reviewingOfficer.id, actorName: reviewingOfficer.name, actorRole: 'REVIEWING_OFFICER', description: 'State: Under Review → Completed (Approved)', previousState: JSON.stringify({ state: 'Under Review' }), newState: JSON.stringify({ state: 'Completed' }), evaluationId: eval1.id },
+      { entityType: 'REPORT', entityId: sampleReport.id, action: 'CREATED', actorId: testingOfficer.id, actorName: testingOfficer.name, actorRole: 'TESTING_OFFICER', description: `Report RPT-2026-0001 generated`, evaluationId: eval1.id },
+      { entityType: 'REPORT', entityId: sampleReport.id, action: 'FINALIZED', actorId: reviewingOfficer.id, actorName: reviewingOfficer.name, actorRole: 'REVIEWING_OFFICER', description: `Report RPT-2026-0001 finalized with SHA-256 hash`, evaluationId: eval1.id },
+    ],
+  });
+
+  console.log(`- Rule Config: ${ruleV1.version} (active) + draft tightened version`);
+  console.log(`- Sample Report: RPT-2026-0001 (finalized with SHA-256 hash)`);
   console.log('MarkSure seed completed successfully!');
 }
 
@@ -349,3 +458,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+

@@ -1,4 +1,4 @@
-import { Instrument, Evaluation, Laboratory, User, PassportData, InstrumentDocument } from './types';
+import { Instrument, Evaluation, Laboratory, User, PassportData, InstrumentDocument, Report, ReportVersion, RuleConfiguration, AuditLog, SimulationRun, IntegrityVerification, VersionDiff, DashboardStats } from './types';
 
 const API_BASE = '/api';
 
@@ -296,4 +296,172 @@ export const api = {
     if (!res.ok) throw new Error(data.error || 'Failed to submit review decision');
     return data;
   },
+
+  // ═══ REPORTS ═══
+  async generateReport(evaluationId: string): Promise<{ report: Report; message: string }> {
+    const res = await fetch(`${API_BASE}/reports/generate/${evaluationId}`, {
+      method: 'POST', headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to generate report');
+    return data;
+  },
+
+  async getReports(params?: { search?: string; status?: string }): Promise<{ reports: Report[] }> {
+    const q = new URLSearchParams();
+    if (params?.search) q.append('search', params.search);
+    if (params?.status && params.status !== 'ALL') q.append('status', params.status);
+    const res = await fetch(`${API_BASE}/reports?${q}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async getReport(id: string): Promise<{ report: Report }> {
+    const res = await fetch(`${API_BASE}/reports/${id}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async finalizeReport(id: string): Promise<{ report: Report; integrityHash: string; message: string }> {
+    const res = await fetch(`${API_BASE}/reports/${id}/finalize`, {
+      method: 'POST', headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async reviseReport(id: string, changeDescription?: string): Promise<{ report: Report; message: string }> {
+    const res = await fetch(`${API_BASE}/reports/${id}/revise`, {
+      method: 'POST', headers: getAuthHeaders(),
+      body: JSON.stringify({ changeDescription }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async verifyReportIntegrity(id: string): Promise<IntegrityVerification> {
+    const res = await fetch(`${API_BASE}/reports/${id}/verify`, {
+      method: 'POST', headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async verifyReportByReportId(reportId: string): Promise<IntegrityVerification> {
+    const res = await fetch(`${API_BASE}/reports/verify/${reportId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  getReportExportUrl(id: string, format: 'pdf' | 'docx'): string {
+    const token = localStorage.getItem('marksure_token');
+    return `${API_BASE}/reports/${id}/export/${format}?token=${token}`;
+  },
+
+  async getReportVersions(id: string): Promise<{ versions: ReportVersion[] }> {
+    const res = await fetch(`${API_BASE}/reports/${id}/versions`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async getReportDiff(id: string, v1: number, v2: number): Promise<VersionDiff> {
+    const res = await fetch(`${API_BASE}/reports/${id}/diff/${v1}/${v2}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  // ═══ SEARCH ═══
+  async search(params: Record<string, string>): Promise<{ instruments: any[]; evaluations: any[]; reports: any[] }> {
+    const q = new URLSearchParams(params);
+    const res = await fetch(`${API_BASE}/search?${q}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  // ═══ AUDIT ═══
+  async getAuditLogs(params?: Record<string, string>): Promise<{ logs: AuditLog[] }> {
+    const q = new URLSearchParams(params || {});
+    const res = await fetch(`${API_BASE}/audit?${q}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async getEvaluationAuditTrail(evaluationId: string): Promise<{ auditLogs: AuditLog[]; timelineEvents: any[] }> {
+    const res = await fetch(`${API_BASE}/audit/evaluation/${evaluationId}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  // ═══ RULE CONFIGURATIONS ═══
+  async getRuleConfigs(): Promise<{ ruleConfigs: RuleConfiguration[] }> {
+    const res = await fetch(`${API_BASE}/rule-configs`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async createRuleConfig(config: Partial<RuleConfiguration>): Promise<{ ruleConfig: RuleConfiguration }> {
+    const res = await fetch(`${API_BASE}/rule-configs`, {
+      method: 'POST', headers: getAuthHeaders(),
+      body: JSON.stringify(config),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  // ═══ SIMULATOR ═══
+  async runSimulation(params: { name: string; description?: string; baseRuleConfigId?: string; simulatedRuleConfigId: string }): Promise<{ simulation: SimulationRun; message: string }> {
+    const res = await fetch(`${API_BASE}/simulator/run`, {
+      method: 'POST', headers: getAuthHeaders(),
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  async getSimulationRuns(): Promise<{ runs: SimulationRun[] }> {
+    const res = await fetch(`${API_BASE}/simulator/runs`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  },
+
+  // ═══ DASHBOARD ═══
+  async getDashboardStats(): Promise<DashboardStats> {
+    const [evalRes, instRes, reportRes, auditRes] = await Promise.all([
+      fetch(`${API_BASE}/evaluations`, { headers: getAuthHeaders() }),
+      fetch(`${API_BASE}/instruments`, { headers: getAuthHeaders() }),
+      fetch(`${API_BASE}/reports`, { headers: getAuthHeaders() }),
+      fetch(`${API_BASE}/audit?limit=10`, { headers: getAuthHeaders() }),
+    ]);
+    const evalData = await evalRes.json();
+    const instData = await instRes.json();
+    const rptData = await reportRes.json();
+    const auditData = await auditRes.json();
+    const evaluations = evalData.evaluations || [];
+    const evaluationsByState: Record<string, number> = {};
+    evaluations.forEach((e: any) => { evaluationsByState[e.state] = (evaluationsByState[e.state] || 0) + 1; });
+    return {
+      totalInstruments: (instData.instruments || []).length,
+      totalEvaluations: evaluations.length,
+      evaluationsByState,
+      totalReports: (rptData.reports || []).length,
+      recentReports: (rptData.reports || []).slice(0, 5),
+      recentAuditLogs: (auditData.logs || []).slice(0, 10),
+    };
+  },
 };
+

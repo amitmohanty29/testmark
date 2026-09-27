@@ -19,10 +19,12 @@ import {
   Clock, 
   ArrowRight,
   ExternalLink,
-  MessageSquare
+  MessageSquare,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DigitalTestWorkspace } from '../components/testWorkspace/DigitalTestWorkspace';
+import { EvaluationAuditTrail } from '../components/audit/EvaluationAuditTrail';
 
 export const EvaluationDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -37,6 +39,10 @@ export const EvaluationDetail: React.FC = () => {
   const [reviewRemarks, setReviewRemarks] = useState('');
   const [transitionSuccess, setTransitionSuccess] = useState<string | null>(null);
 
+  // Report state
+  const [existingReport, setExistingReport] = useState<any | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
+
   useEffect(() => {
     if (id) loadEvaluation(id);
   }, [id]);
@@ -50,10 +56,36 @@ export const EvaluationDetail: React.FC = () => {
       if (res.evaluation.reviewRemarks) {
         setReviewRemarks(res.evaluation.reviewRemarks);
       }
+
+      // Check for existing report
+      try {
+        const rptRes = await api.getReports({ search: res.evaluation.evaluationNumber });
+        if (rptRes.reports && rptRes.reports.length > 0) {
+          setExistingReport(rptRes.reports[0]);
+        }
+      } catch (e) {
+        // ignore report lookup error
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load evaluation session');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    if (!evaluation) return;
+    setGeneratingReport(true);
+    setError(null);
+    setTransitionSuccess(null);
+    try {
+      const res = await api.generateReport(evaluation.id);
+      setExistingReport(res.report);
+      setTransitionSuccess(`OIML R-76 Test Report ${res.report.reportId} generated successfully!`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate report');
+    } finally {
+      setGeneratingReport(false);
     }
   };
 
@@ -115,15 +147,35 @@ export const EvaluationDetail: React.FC = () => {
           <span className="text-xs font-mono font-bold text-gov-sand-800">{evaluation.evaluationNumber}</span>
         </div>
 
-        {evaluation.instrument && (
-          <Link
-            to={`/passport/${evaluation.instrument.id}`}
-            className="btn-gov-outline text-xs"
-          >
-            <BookMarked className="w-3.5 h-3.5 mr-1.5 text-[#006c51]" />
-            View Instrument Digital Passport
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {existingReport ? (
+            <Link
+              to={`/reports/${existingReport.id}`}
+              className="btn-gov-primary text-xs flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5" /> View Report ({existingReport.reportId})
+            </Link>
+          ) : (
+            <button
+              onClick={handleGenerateReport}
+              disabled={generatingReport}
+              className="btn-gov-primary text-xs flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              {generatingReport ? 'Generating Report...' : 'Auto-Generate Report'}
+            </button>
+          )}
+
+          {evaluation.instrument && (
+            <Link
+              to={`/passport/${evaluation.instrument.id}`}
+              className="btn-gov-outline text-xs"
+            >
+              <BookMarked className="w-3.5 h-3.5 mr-1.5 text-[#006c51]" />
+              Passport
+            </Link>
+          )}
+        </div>
       </div>
 
       {transitionSuccess && (
@@ -351,6 +403,9 @@ export const EvaluationDetail: React.FC = () => {
           No instrument details linked to this evaluation.
         </div>
       )}
+
+      {/* Complete Audit Trail */}
+      <EvaluationAuditTrail evaluationId={evaluation.id} />
     </div>
   );
 };

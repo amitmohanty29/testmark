@@ -102,8 +102,13 @@ model Evaluation {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
+  ruleConfigId      String?
+  ruleConfig        RuleConfiguration? @relation(fields: [ruleConfigId], references: [id])
+
   timelineEvents    TimelineEvent[]
   testRecords       TestRecord[]
+  reports           Report[]
+  auditLogs         AuditLog[]
 }
 
 model TimelineEvent {
@@ -151,4 +156,85 @@ model TestAttachment {
   fileType     String?     // "PHOTO" | "DOCUMENT" | "CALIBRATION_SHEET"
   fileSize     Int?
   uploadedAt   DateTime    @default(now())
+}
+
+model RuleConfiguration {
+  id              String       @id @default(uuid())
+  version         String       @unique
+  name            String
+  description     String?
+  standardRef     String       @default("OIML R 76-1 (Edition 2006)")
+  configuration   String       // JSON: MPE tables, tolerances, class definitions
+  isActive        Boolean      @default(true)
+  isDraft         Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  evaluations     Evaluation[]
+  reports         Report[]
+}
+
+model Report {
+  id              String          @id @default(uuid())
+  reportId        String          @unique
+  evaluationId    String
+  evaluation      Evaluation      @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  ruleConfigId    String?
+  ruleConfig      RuleConfiguration? @relation(fields: [ruleConfigId], references: [id])
+  version         Int             @default(1)
+  status          String          @default("DRAFT")
+  reportData      String          // JSON: complete snapshot of all report data
+  integrityHash   String?
+  finalizedAt     DateTime?
+  finalizedById   String?
+  generatedById   String
+  generatedByName String          @default("")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  versions        ReportVersion[]
+}
+
+model ReportVersion {
+  id                String   @id @default(uuid())
+  reportId          String
+  report            Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  version           Int
+  reportData        String
+  integrityHash     String?
+  changeDescription String?
+  createdById       String
+  createdByName     String   @default("")
+  createdAt         DateTime @default(now())
+}
+
+model AuditLog {
+  id              String      @id @default(uuid())
+  entityType      String      // EVALUATION, REPORT, INSTRUMENT, TEST_RECORD
+  entityId        String
+  action          String      // CREATED, UPDATED, STATE_CHANGE, FINALIZED, EXPORTED, etc.
+  actorId         String
+  actorName       String
+  actorRole       String
+  previousState   String?
+  newState        String?
+  description     String
+  metadata        String?
+  evaluationId    String?
+  evaluation      Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+}
+
+model SimulationRun {
+  id                    String   @id @default(uuid())
+  name                  String
+  description           String?
+  baseRuleConfigId      String
+  simulatedRuleConfigId String
+  results               String   // JSON: array of evaluation comparison results
+  totalEvaluations      Int
+  flippedCount          Int
+  runById               String
+  runByName             String
+  createdAt             DateTime @default(now())
 }

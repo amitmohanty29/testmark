@@ -233,3 +233,111 @@ export interface TareObservation {
   netIndication: number;
   netDeltaL?: number;
 }
+
+// ── New Feature Types ──
+
+export interface RuleConfiguration {
+  id: string;
+  version: string;
+  name: string;
+  description?: string;
+  standardRef: string;
+  configuration: any;
+  isActive: boolean;
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Report {
+  id: string;
+  reportId: string;
+  evaluationId: string;
+  evaluation?: Evaluation;
+  ruleConfigId?: string;
+  ruleConfig?: RuleConfiguration;
+  version: number;
+  status: 'DRAFT' | 'FINALIZED' | 'REVISED';
+  reportData: string;
+  integrityHash?: string;
+  finalizedAt?: string;
+  finalizedById?: string;
+  generatedById: string;
+  generatedByName: string;
+  createdAt: string;
+  updatedAt: string;
+  versions?: ReportVersion[];
+}
+
+export interface ReportVersion {
+  id: string;
+  reportId: string;
+  version: number;
+  reportData: string;
+  integrityHash?: string;
+  changeDescription?: string;
+  createdById: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  previousState?: any;
+  newState?: any;
+  description: string;
+  metadata?: any;
+  evaluationId?: string;
+  createdAt: string;
+}
+
+export interface SimulationRun {
+  id: string;
+  name: string;
+  description?: string;
+  baseRuleConfigId: string;
+  simulatedRuleConfigId: string;
+  results: any[];
+  totalEvaluations: number;
+  flippedCount: number;
+  runById: string;
+  runByName: string;
+  createdAt: string;
+}
+
+export interface IntegrityVerification {
+  verified: boolean;
+  reportId: string;
+  storedHash: string;
+  computedHash: string;
+  finalizedAt?: string;
+  version?: number;
+  reason: string;
+}
+
+export interface VersionDiff {
+  version1: { version: number; createdAt: string; createdByName: string };
+  version2: { version: number; createdAt: string; createdByName: string };
+  diffs: Array<{ field: string; oldValue: any; newValue: any }>;
+  totalChanges: number;
+}
+
+export interface DashboardStats {
+  totalInstruments: number;
+  totalEvaluations: number;
+  evaluationsByState: Record<string, number>;
+  totalReports: number;
+  recentReports: Report[];
+  recentAuditLogs: AuditLog[];
+  myWorkload?: {
+    activeEvaluations: number;
+    pendingReview: number;
+    completedThisMonth: number;
+  };
+}
