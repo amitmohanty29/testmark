@@ -25,12 +25,12 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
       take: Math.min(parseInt(String(limit || '100')), 500),
     });
 
-    const formatted = logs.map(log => ({
-      ...log,
-      previousState: safeParse(log.previousState),
-      newState: safeParse(log.newState),
-      metadata: safeParse(log.metadata),
-    }));
+    const formatted = logs.map((log: (typeof logs)[number]) => ({
+    ...log,
+    previousState: safeParse(log.previousState),
+    newState: safeParse(log.newState),
+    metadata: safeParse(log.metadata),
+  }));
 
     res.json({ logs: formatted });
   } catch (error) {
@@ -60,12 +60,12 @@ router.get('/evaluation/:evaluationId', authenticateToken, async (req: Authentic
       orderBy: { createdAt: 'desc' },
     });
 
-    const formatted = evalLogs.map(log => ({
-      ...log,
-      previousState: safeParse(log.previousState),
-      newState: safeParse(log.newState),
-      metadata: safeParse(log.metadata),
-    }));
+    const formatted = evalLogs.map((log: (typeof evalLogs)[number]) => ({
+    ...log,
+    previousState: safeParse(log.previousState),
+    newState: safeParse(log.newState),
+    metadata: safeParse(log.metadata),
+}));
 
     res.json({ auditLogs: formatted, timelineEvents });
   } catch (error) {
