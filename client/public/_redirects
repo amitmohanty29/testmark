@@ -1,0 +1,3 @@
+# Netlify Single-Page Application (SPA) Redirects
+# Ensures client-side routes (like /passports, /passport/:id, /evaluations) resolve to index.html with HTTP 200
+/*    /index.html   200

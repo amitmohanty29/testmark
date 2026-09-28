@@ -1,6 +1,7 @@
 import { Instrument, Evaluation, Laboratory, User, PassportData, InstrumentDocument, Report, ReportVersion, RuleConfiguration, AuditLog, SimulationRun, IntegrityVerification, VersionDiff, DashboardStats } from './types';
 
-const API_BASE = '/api';
+const rawBase = ((import.meta as any).env?.VITE_API_URL as string)?.trim() || '/api';
+const API_BASE = rawBase.endsWith('/api') ? rawBase : (rawBase === '' || rawBase === '/' ? '/api' : `${rawBase.replace(/\/+$/, '')}/api`);
 
 const getAuthHeaders = (): HeadersInit => {
   const token = localStorage.getItem('marksure_token');
