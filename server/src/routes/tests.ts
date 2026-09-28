@@ -655,7 +655,7 @@ router.post(
 
       if (action === 'APPROVE') {
         // Verify no test module is in FAIL state
-        const failedTests = testRecords.filter((t) => t.status === 'FAIL');
+        const failedTests = testRecords.filter((t: { status: string }) => t.status === 'FAIL');
         if (failedTests.length > 0) {
           res.status(400).json({
             error: `Cannot approve evaluation: ${failedTests.length} test module(s) marked as FAIL. All tests must be PASS or justified under REVIEW.`,
