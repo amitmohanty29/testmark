@@ -408,9 +408,9 @@ export const DigitalTestWorkspace: React.FC<DigitalTestWorkspaceProps> = ({
               </h3>
               <button
                 onClick={() => setShowSubmitModal(false)}
-                className="text-gov-sand-500 hover:text-gov-sand-800 text-xs font-bold"
+                className="text-gov-sand-500 hover:text-gov-sand-800 text-xs font-semibold px-2 py-0.5 rounded border border-gov-sand-300"
               >
-                ✕
+                Close
               </button>
             </div>
 
@@ -486,9 +486,9 @@ export const DigitalTestWorkspace: React.FC<DigitalTestWorkspaceProps> = ({
               </h3>
               <button
                 onClick={() => setShowReviewModal(null)}
-                className="text-gov-sand-500 hover:text-gov-sand-800 text-xs font-bold"
+                className="text-gov-sand-500 hover:text-gov-sand-800 text-xs font-semibold px-2 py-0.5 rounded border border-gov-sand-300"
               >
-                ✕
+                Close
               </button>
             </div>
 

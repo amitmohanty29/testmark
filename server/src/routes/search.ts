@@ -97,6 +97,7 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
           { evaluation: { evaluationNumber: { contains: searchStr } } },
           { evaluation: { instrument: { manufacturer: { contains: searchStr } } } },
           { evaluation: { instrument: { serialNumber: { contains: searchStr } } } },
+          { evaluation: { instrument: { passportId: { contains: searchStr } } } },
         ];
       }
 

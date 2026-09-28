@@ -64,6 +64,40 @@ model Instrument {
   documents            InstrumentDocument[]
   evaluations          Evaluation[]
   timelineEvents       TimelineEvent[]
+  passport             Passport?
+}
+
+model Passport {
+  id               String            @id @default(uuid())
+  passportId       String            @unique // e.g. "DOCA-NAWI-P-000123"
+  instrumentId     String            @unique
+  instrument       Instrument        @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  createdBy        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  events           PassportEvent[]
+  evaluations      Evaluation[]
+  testRecords      TestRecord[]
+  attachments      TestAttachment[]
+  reports          Report[]
+  documents        InstrumentDocument[]
+}
+
+model PassportEvent {
+  id               String            @id @default(uuid())
+  passportId       String
+  passport         Passport          @relation(fields: [passportId], references: [id], onDelete: Cascade)
+  eventType        String            // REGISTERED, DOCUMENT_ADDED, EVALUATION_CREATED, TEST_RECORDED, EVIDENCE_ATTACHED, SUBMITTED_FOR_REVIEW, REVIEW_APPROVED, REVIEW_RETURNED, REPORT_GENERATED, REPORT_REVISED, CERTIFICATE_EXPORTED, INTEGRITY_VERIFIED, RECALIBRATION
+  refType          String?           // INSTRUMENT, DOCUMENT, EVALUATION, TEST_RECORD, TEST_ATTACHMENT, REPORT, CERTIFICATE, VERIFICATION
+  refId            String?
+  actorId          String?
+  actorName        String?
+  actorDesignation String?
+  timestamp        DateTime          @default(now())
+  summary          String
+  metadata         String?           // JSON
+  createdAt        DateTime          @default(now())
 }
 
 model InstrumentDocument {
@@ -75,6 +109,8 @@ model InstrumentDocument {
   fileSize     Int?
   instrumentId String
   instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  passportId   String?
+  passport     Passport?  @relation(fields: [passportId], references: [id], onDelete: SetNull)
   uploadedAt   DateTime   @default(now())
 }
 
@@ -83,6 +119,8 @@ model Evaluation {
   evaluationNumber  String          @unique // e.g. "EV-2026-0041"
   instrumentId      String
   instrument        Instrument      @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  passportId        String?
+  passport          Passport?       @relation(fields: [passportId], references: [id], onDelete: SetNull)
   laboratoryId      String
   laboratory        Laboratory      @relation(fields: [laboratoryId], references: [id])
   evaluationDate    DateTime        @default(now())
@@ -129,6 +167,8 @@ model TestRecord {
   id                  String           @id @default(uuid())
   evaluationId        String
   evaluation          Evaluation       @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  passportId          String?
+  passport            Passport?        @relation(fields: [passportId], references: [id], onDelete: SetNull)
   testType            String           // "WEIGHING_PERFORMANCE" | "REPEATABILITY" | "ECCENTRICITY" | "TARE"
   status              String           @default("DRAFT") // "DRAFT" | "PASS" | "FAIL" | "REVIEW"
   environmentalData   String?          // JSON: temperature, humidity, pressure, instrumentLevel, notes
@@ -150,6 +190,8 @@ model TestAttachment {
   id           String      @id @default(uuid())
   testRecordId String
   testRecord   TestRecord  @relation(fields: [testRecordId], references: [id], onDelete: Cascade)
+  passportId   String?
+  passport     Passport?   @relation(fields: [passportId], references: [id], onDelete: SetNull)
   title        String
   fileName     String
   fileUrl      String
@@ -179,6 +221,8 @@ model Report {
   reportId        String          @unique
   evaluationId    String
   evaluation      Evaluation      @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  passportId      String?
+  passport        Passport?       @relation(fields: [passportId], references: [id], onDelete: SetNull)
   ruleConfigId    String?
   ruleConfig      RuleConfiguration? @relation(fields: [ruleConfigId], references: [id])
   version         Int             @default(1)

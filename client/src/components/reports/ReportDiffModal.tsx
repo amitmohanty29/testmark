@@ -83,7 +83,7 @@ export const ReportDiffModal: React.FC<ReportDiffModalProps> = ({
             </div>
             <div>
               <h2 className="text-sm font-bold font-serif text-gov-sand-900">
-                Report Version Comparison — "What Changed?"
+                Report Version Comparison
               </h2>
               <p className="text-[11px] text-gov-sand-600">
                 Audited differential analysis across versions of report {reportCode}

@@ -64,6 +64,40 @@ model Instrument {
   documents            InstrumentDocument[]
   evaluations          Evaluation[]
   timelineEvents       TimelineEvent[]
+  passport             Passport?
+}
+
+model Passport {
+  id               String            @id @default(uuid())
+  passportId       String            @unique // e.g. "DOCA-NAWI-P-000123"
+  instrumentId     String            @unique
+  instrument       Instrument        @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  createdBy        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  events           PassportEvent[]
+  evaluations      Evaluation[]
+  testRecords      TestRecord[]
+  attachments      TestAttachment[]
+  reports          Report[]
+  documents        InstrumentDocument[]
+}
+
+model PassportEvent {
+  id               String            @id @default(uuid())
+  passportId       String
+  passport         Passport          @relation(fields: [passportId], references: [id], onDelete: Cascade)
+  eventType        String            // REGISTERED, DOCUMENT_ADDED, EVALUATION_CREATED, TEST_RECORDED, EVIDENCE_ATTACHED, SUBMITTED_FOR_REVIEW, REVIEW_APPROVED, REVIEW_RETURNED, REPORT_GENERATED, REPORT_REVISED, CERTIFICATE_EXPORTED, INTEGRITY_VERIFIED, RECALIBRATION
+  refType          String?           // INSTRUMENT, DOCUMENT, EVALUATION, TEST_RECORD, TEST_ATTACHMENT, REPORT, CERTIFICATE, VERIFICATION
+  refId            String?
+  actorId          String?
+  actorName        String?
+  actorDesignation String?
+  timestamp        DateTime          @default(now())
+  summary          String
+  metadata         String?           // JSON
+  createdAt        DateTime          @default(now())
 }
 
 model InstrumentDocument {
@@ -75,33 +109,44 @@ model InstrumentDocument {
   fileSize     Int?
   instrumentId String
   instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  passportId   String?
+  passport     Passport?  @relation(fields: [passportId], references: [id], onDelete: SetNull)
   uploadedAt   DateTime   @default(now())
 }
 
 model Evaluation {
-  id                 String          @id @default(uuid())
-  evaluationNumber   String          @unique // e.g. "EV-2026-0041"
-  instrumentId       String
-  instrument         Instrument      @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
-  laboratoryId       String
-  laboratory         Laboratory      @relation(fields: [laboratoryId], references: [id])
-  evaluationDate     DateTime        @default(now())
-  testingOfficerId   String
-  testingOfficer     User            @relation("TestingOfficer", fields: [testingOfficerId], references: [id])
+  id                String          @id @default(uuid())
+  evaluationNumber  String          @unique // e.g. "EV-2026-0041"
+  instrumentId      String
+  instrument        Instrument      @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  passportId        String?
+  passport          Passport?       @relation(fields: [passportId], references: [id], onDelete: SetNull)
+  laboratoryId      String
+  laboratory        Laboratory      @relation(fields: [laboratoryId], references: [id])
+  evaluationDate    DateTime        @default(now())
+  testingOfficerId  String
+  testingOfficer    User            @relation("TestingOfficer", fields: [testingOfficerId], references: [id])
   reviewingOfficerId String?
-  reviewingOfficer   User?           @relation("ReviewingOfficer", fields: [reviewingOfficerId], references: [id])
+  reviewingOfficer  User?           @relation("ReviewingOfficer", fields: [reviewingOfficerId], references: [id])
   
-  state              String          @default("Draft") // "Draft" | "In Progress" | "Under Review" | "Completed"
+  state             String          @default("Draft") // "Draft" | "In Progress" | "Under Review" | "Completed"
   
-  standardReference  String          @default("OIML R 76-1 (Edition 2006)")
-  patternApprovalNo  String?
-  generalRemarks     String?
-  reviewRemarks      String?
-  completedAt        DateTime?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  // OIML R-76 evaluation metadata
+  standardReference String          @default("OIML R 76-1 (Edition 2006)")
+  patternApprovalNo String?
+  generalRemarks    String?
+  reviewRemarks     String?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  timelineEvents     TimelineEvent[]
+  ruleConfigId      String?
+  ruleConfig        RuleConfiguration? @relation(fields: [ruleConfigId], references: [id])
+
+  timelineEvents    TimelineEvent[]
+  testRecords       TestRecord[]
+  reports           Report[]
+  auditLogs         AuditLog[]
 }
 
 model TimelineEvent {
@@ -116,4 +161,124 @@ model TimelineEvent {
   officerName  String
   officerRole  String
   createdAt    DateTime    @default(now())
+}
+
+model TestRecord {
+  id                  String           @id @default(uuid())
+  evaluationId        String
+  evaluation          Evaluation       @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  passportId          String?
+  passport            Passport?        @relation(fields: [passportId], references: [id], onDelete: SetNull)
+  testType            String           // "WEIGHING_PERFORMANCE" | "REPEATABILITY" | "ECCENTRICITY" | "TARE"
+  status              String           @default("DRAFT") // "DRAFT" | "PASS" | "FAIL" | "REVIEW"
+  environmentalData   String?          // JSON: temperature, humidity, pressure, instrumentLevel, notes
+  testInputs          String?          // JSON: verificationType, testMethod, unit, loadPoints
+  observations        String?          // JSON: recorded rows
+  calculationResults  String?          // JSON: calculated errors, maxError, MPEs
+  complianceDetails   String?          // JSON: verdict, anomalies, whyBreakdown
+  notes               String?
+  testedById          String?
+  testedByName        String?
+  completedAt         DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  attachments         TestAttachment[]
+}
+
+model TestAttachment {
+  id           String      @id @default(uuid())
+  testRecordId String
+  testRecord   TestRecord  @relation(fields: [testRecordId], references: [id], onDelete: Cascade)
+  passportId   String?
+  passport     Passport?   @relation(fields: [passportId], references: [id], onDelete: SetNull)
+  title        String
+  fileName     String
+  fileUrl      String
+  fileType     String?     // "PHOTO" | "DOCUMENT" | "CALIBRATION_SHEET"
+  fileSize     Int?
+  uploadedAt   DateTime    @default(now())
+}
+
+model RuleConfiguration {
+  id              String       @id @default(uuid())
+  version         String       @unique
+  name            String
+  description     String?
+  standardRef     String       @default("OIML R 76-1 (Edition 2006)")
+  configuration   String       // JSON: MPE tables, tolerances, class definitions
+  isActive        Boolean      @default(true)
+  isDraft         Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  evaluations     Evaluation[]
+  reports         Report[]
+}
+
+model Report {
+  id              String          @id @default(uuid())
+  reportId        String          @unique
+  evaluationId    String
+  evaluation      Evaluation      @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  passportId      String?
+  passport        Passport?       @relation(fields: [passportId], references: [id], onDelete: SetNull)
+  ruleConfigId    String?
+  ruleConfig      RuleConfiguration? @relation(fields: [ruleConfigId], references: [id])
+  version         Int             @default(1)
+  status          String          @default("DRAFT")
+  reportData      String          // JSON: complete snapshot of all report data
+  integrityHash   String?
+  finalizedAt     DateTime?
+  finalizedById   String?
+  generatedById   String
+  generatedByName String          @default("")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  versions        ReportVersion[]
+}
+
+model ReportVersion {
+  id                String   @id @default(uuid())
+  reportId          String
+  report            Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  version           Int
+  reportData        String
+  integrityHash     String?
+  changeDescription String?
+  createdById       String
+  createdByName     String   @default("")
+  createdAt         DateTime @default(now())
+}
+
+model AuditLog {
+  id              String      @id @default(uuid())
+  entityType      String      // EVALUATION, REPORT, INSTRUMENT, TEST_RECORD, PASSPORT
+  entityId        String
+  action          String      // CREATED, UPDATED, STATE_CHANGE, FINALIZED, EXPORTED, VIEWED, etc.
+  actorId         String
+  actorName       String
+  actorRole       String
+  previousState   String?
+  newState        String?
+  description     String
+  metadata        String?
+  evaluationId    String?
+  evaluation      Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+}
+
+model SimulationRun {
+  id                    String   @id @default(uuid())
+  name                  String
+  description           String?
+  baseRuleConfigId      String
+  simulatedRuleConfigId String
+  results               String   // JSON: array of evaluation comparison results
+  totalEvaluations      Int
+  flippedCount          Int
+  runById               String
+  runByName             String
+  createdAt             DateTime @default(now())
 }

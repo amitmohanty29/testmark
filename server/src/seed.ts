@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { PassportService } from './engine/passportService';
 
 const prisma = new PrismaClient();
 
@@ -7,6 +8,8 @@ async function main() {
   console.log('Seeding MarkSure Metrology Database...');
 
   // Clean existing data for clean seed
+  await prisma.passportEvent.deleteMany();
+  await prisma.passport.deleteMany();
   await prisma.timelineEvent.deleteMany();
   await prisma.instrumentDocument.deleteMany();
   await prisma.evaluation.deleteMany();
@@ -447,6 +450,11 @@ async function main() {
 
   console.log(`- Rule Config: ${ruleV1.version} (active) + draft tightened version`);
   console.log(`- Sample Report: RPT-2026-0001 (finalized with SHA-256 hash)`);
+
+  // Backfill and link Passports for all seeded instruments, evaluations, reports and documents
+  const backfillResult = await PassportService.backfillPassports();
+  console.log(`- Digital Passports populated: ${backfillResult.passportsCreated} created, ${backfillResult.eventsCreated} events backfilled.`);
+
   console.log('MarkSure seed completed successfully!');
 }
 

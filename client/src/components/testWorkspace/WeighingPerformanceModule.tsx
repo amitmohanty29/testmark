@@ -9,7 +9,7 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   XCircle, 
-  Sparkles, 
+  RotateCw, 
   ArrowUp, 
   ArrowDown,
   Info,
@@ -368,7 +368,7 @@ export const WeighingPerformanceModule: React.FC<WeighingPerformanceModuleProps>
                 className="btn-gov-secondary text-xs py-1 px-2.5 flex items-center gap-1"
                 title="Automatically calculate standard test points: Zero, Min, 500e, 2000e, 50% Max, 100% Max"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#006c51]" /> Reset to Standard Points
+                <RotateCw className="w-3.5 h-3.5 text-[#006c51]" /> Reset to Standard Points
               </button>
               <button
                 type="button"

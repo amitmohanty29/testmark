@@ -16,7 +16,6 @@ import {
   ExternalLink,
   Calendar,
   Layers,
-  Sparkles,
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
@@ -398,9 +397,9 @@ export const ReportsList: React.FC = () => {
               </div>
               <button
                 onClick={() => setIsGenerateModalOpen(false)}
-                className="text-gov-sand-400 hover:text-gov-sand-600 text-sm font-bold"
+                className="text-gov-sand-500 hover:text-gov-sand-800 text-xs font-semibold px-2 py-0.5 rounded border border-gov-sand-300"
               >
-                ✕
+                Close
               </button>
             </div>
 
@@ -428,7 +427,7 @@ export const ReportsList: React.FC = () => {
                   ) : (
                     completedEvaluations.map((ev) => (
                       <option key={ev.id} value={ev.id}>
-                        {ev.evaluationNumber} — {ev.instrument?.model || 'NAWI'} ({ev.state})
+                        {ev.evaluationNumber} : {ev.instrument?.model || 'NAWI'} ({ev.state})
                       </option>
                     ))
                   )}

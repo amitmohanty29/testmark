@@ -218,7 +218,7 @@ export const InstrumentDetail: React.FC = () => {
             <div className="flex justify-between py-1">
               <span className="text-gov-sand-600">Actual Scale Interval (d):</span>
               <span className="font-bold font-mono text-gov-sand-900">
-                {instrument.scaleIntervalD ? `${instrument.scaleIntervalD} ${instrument.verificationUnits}` : '—'}
+                {instrument.scaleIntervalD ? `${instrument.scaleIntervalD} ${instrument.verificationUnits}` : 'N/A'}
               </span>
             </div>
             <div className="flex justify-between py-1">

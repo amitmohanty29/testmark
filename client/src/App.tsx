@@ -121,6 +121,7 @@ export const App: React.FC = () => {
 
             {/* USP 1: Permanent Lifetime Digital Passport (Stable Public URL/ID) */}
             <Route path="/passport/:id" element={<DigitalPassport />} />
+            <Route path="/passports/:id" element={<DigitalPassport />} />
 
             {/* OIML Test Reports */}
             <Route

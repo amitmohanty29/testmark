@@ -80,7 +80,7 @@ export const ReportDetail: React.FC = () => {
     try {
       const res = await api.finalizeReport(report.id);
       setReport(res.report);
-      setFinalizeSuccess(`Report finalized! Tamper-proof SHA-256 digest created: ${res.integrityHash}`);
+      setFinalizeSuccess(`Report finalized. SHA-256 integrity hash: ${res.integrityHash}`);
     } catch (err: any) {
       setError(err.message || 'Failed to finalize report');
     } finally {
@@ -212,6 +212,16 @@ export const ReportDetail: React.FC = () => {
             <Award className="w-3.5 h-3.5 mr-1 text-amber-300" /> Export Certificate As...
           </button>
 
+          {(inst.passportId || inst.id || eval_.instrumentId) && (
+            <Link
+              to={`/passport/${inst.passportId || inst.id || eval_.instrumentId}`}
+              className="btn-gov-outline text-xs text-[#006c51] flex items-center"
+              title="Open parent Instrument Digital Passport"
+            >
+              <BookMarked className="w-3.5 h-3.5 mr-1" /> Passport
+            </Link>
+          )}
+
           {versionNumbers.length >= 2 && (
             <button
               onClick={() => setIsDiffModalOpen(true)}
@@ -324,12 +334,12 @@ export const ReportDetail: React.FC = () => {
               {verificationResult.verified ? (
                 <>
                   <CheckCircle className="w-4 h-4 text-emerald-600" />
-                  <span>INTEGRITY CONFIRMED: Report data strictly matches stored ledger digest. Document is 100% authentic.</span>
+                  <span>INTEGRITY CONFIRMED: Report data matches stored ledger digest. Document is authentic.</span>
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-4 h-4 text-red-600" />
-                  <span>INTEGRITY VIOLATION: Report hash mismatch detected!</span>
+                  <span>INTEGRITY VIOLATION: Report hash mismatch detected.</span>
                 </>
               )}
             </div>
@@ -425,7 +435,7 @@ export const ReportDetail: React.FC = () => {
             <div className="space-y-1">
               <div className="flex justify-between">
                 <span className="text-gov-sand-600">Manufacturer & Model:</span>
-                <span className="font-semibold text-gov-sand-900 text-right">{inst?.manufacturer} — {inst?.model}</span>
+                <span className="font-semibold text-gov-sand-900 text-right">{inst?.manufacturer} / {inst?.model}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gov-sand-600">Serial Number:</span>
@@ -655,9 +665,9 @@ export const ReportDetail: React.FC = () => {
               </div>
               <button
                 onClick={() => setIsReviseModalOpen(false)}
-                className="text-gov-sand-400 hover:text-gov-sand-600 text-sm font-bold"
+                className="text-gov-sand-500 hover:text-gov-sand-800 text-xs font-semibold px-2 py-0.5 rounded border border-gov-sand-300"
               >
-                ✕
+                Close
               </button>
             </div>
 

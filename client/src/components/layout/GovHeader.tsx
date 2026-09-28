@@ -134,7 +134,7 @@ export const GovHeader: React.FC = () => {
               Department of Consumer Affairs • Legal Metrology Division
             </p>
             <p className="text-[11px] text-gov-sand-600">
-              OIML R-76 Non-Automatic Weighing Instruments (NAWI) Digital Test & Passport Engine
+              OIML R-76 Verification and Digital Metrology Passport Portal for NAWI
             </p>
           </div>
         </div>
@@ -241,7 +241,7 @@ export const GovHeader: React.FC = () => {
           {pathParts.length === 0 && (
             <>
               <ChevronRight className="w-3 h-3 text-gov-sand-400" />
-              <span className="font-semibold text-gov-green-800">Dashboard & Metrology Command</span>
+              <span className="font-semibold text-gov-green-800">Dashboard</span>
             </>
           )}
         </div>

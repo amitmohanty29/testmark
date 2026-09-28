@@ -81,7 +81,7 @@ export const EvaluationDetail: React.FC = () => {
     try {
       const res = await api.generateReport(evaluation.id);
       setExistingReport(res.report);
-      setTransitionSuccess(`OIML R-76 Test Report ${res.report.reportId} generated successfully!`);
+      setTransitionSuccess(`OIML R-76 Test Report ${res.report.reportId} generated.`);
     } catch (err: any) {
       setError(err.message || 'Failed to generate report');
     } finally {

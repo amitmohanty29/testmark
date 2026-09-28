@@ -99,13 +99,71 @@ export interface Instrument {
   };
 }
 
+export type PassportEventType =
+  | 'REGISTERED'
+  | 'DOCUMENT_ADDED'
+  | 'EVALUATION_CREATED'
+  | 'TEST_RECORDED'
+  | 'EVIDENCE_ATTACHED'
+  | 'SUBMITTED_FOR_REVIEW'
+  | 'REVIEW_APPROVED'
+  | 'REVIEW_RETURNED'
+  | 'REPORT_GENERATED'
+  | 'REPORT_REVISED'
+  | 'INTEGRITY_VERIFIED'
+  | 'CERTIFICATE_EXPORTED'
+  | 'RECALIBRATION';
+
+export interface PassportEvent {
+  id: string;
+  passportId: string;
+  eventType: PassportEventType | string;
+  refType?: string;
+  refId?: string;
+  actorId?: string;
+  actorName?: string;
+  actorDesignation?: string;
+  timestamp: string;
+  summary: string;
+  metadata?: any;
+}
+
+export interface PassportRecord {
+  id: string;
+  passportId: string;
+  instrumentId: string;
+  instrument: Instrument;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  events: PassportEvent[];
+  evaluations: Evaluation[];
+  documents: InstrumentDocument[];
+  reports?: Report[];
+  evidence?: any[];
+  summary?: {
+    totalEvaluations: number;
+    totalCompletedEvaluations: number;
+    totalReports: number;
+    totalFinalizedReports: number;
+    lastEvaluationDate: string | null;
+    lastEvaluationNumber: string | null;
+    currentComplianceStatus: string;
+  };
+}
+
 export interface PassportData extends Instrument {
+  events?: PassportEvent[];
   summary: {
     totalEvaluations: number;
     completedEvaluations: number;
     activeEvaluations: number;
     lastEvaluationDate: string | null;
-    currentCertificationStatus: 'CERTIFIED_OIML_R76' | 'PENDING_FINAL_CERTIFICATION';
+    currentCertificationStatus: 'CERTIFIED_OIML_R76' | 'PENDING_FINAL_CERTIFICATION' | string;
+    totalCompletedEvaluations?: number;
+    totalReports?: number;
+    totalFinalizedReports?: number;
+    lastEvaluationNumber?: string | null;
   };
 }
 

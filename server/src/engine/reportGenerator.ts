@@ -17,256 +17,315 @@ const safeParse = (str: string | null | undefined, def: any = null) => {
   try { return JSON.parse(str); } catch { return def; }
 };
 
-const GREEN = '#006c51';
-const DARK = '#1a365d';
-const GOLD = '#c9a227';
+const MARGIN = 57; // 20mm
+const PAGE_W = 595.28;
+const CONTENT_W = PAGE_W - MARGIN * 2;
+const LINE_COLOR = '#333333';
+const HEADING_COLOR = '#000000';
 
 export class ReportGenerator {
 
   static async generatePDF(input: ReportInput): Promise<Buffer> {
     return new Promise(async (resolve, reject) => {
       try {
+        const { report, evaluation, instrument, laboratory, testRecords, testingOfficer, reviewingOfficer, ruleConfig } = input;
         const chunks: Buffer[] = [];
-        const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
+        const doc = new PDFDocument({
+          size: 'A4',
+          margin: MARGIN,
+          bufferPages: true,
+          info: {
+            Title: `Test Report No. ${report.reportId}`,
+            Author: laboratory?.name || 'Regional Reference Standards Laboratory',
+            Subject: 'Type Evaluation of NAWI as per OIML R 76',
+            Creator: 'Department of Consumer Affairs, Government of India',
+            Producer: 'Government of India, Legal Metrology Division',
+          },
+        });
         doc.on('data', (c: Buffer) => chunks.push(c));
         doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-        const { report, evaluation, instrument, laboratory, testRecords, testingOfficer, reviewingOfficer, ruleConfig } = input;
+        let sectionNo = 0;
+        const sectionHeading = (title: string) => {
+          sectionNo++;
+          doc.moveDown(0.6);
+          doc.font('Times-Bold').fontSize(12).fillColor(HEADING_COLOR)
+            .text(`${sectionNo}. ${title}`);
+          doc.moveTo(MARGIN, doc.y + 2).lineTo(PAGE_W - MARGIN, doc.y + 2)
+            .strokeColor(LINE_COLOR).lineWidth(0.5).stroke();
+          doc.moveDown(0.4);
+        };
 
-        // ── Header ──
-        doc.rect(0, 0, 595.28, 80).fill(GREEN);
-        doc.font('Helvetica-Bold').fontSize(18).fillColor('white')
-          .text('MarkSure — OIML R-76 Test Report', 50, 22, { align: 'center' });
-        doc.fontSize(9).font('Helvetica')
-          .text('Government of India | Department of Consumer Affairs | Legal Metrology Division', 50, 48, { align: 'center' });
+        const fieldRow = (label: string, value: string) => {
+          doc.font('Times-Bold').fontSize(9).fillColor('#000').text(`${label}: `, { continued: true })
+            .font('Times-Roman').text(String(value || 'N/A'));
+        };
 
-        doc.fillColor('#333').moveDown(2);
-        const y1 = doc.y;
+        const drawTableRow = (cols: string[], colXs: number[], colWs: number[], y: number, bold = false, bg?: string) => {
+          if (bg) {
+            doc.rect(colXs[0] - 2, y - 1, colWs.reduce((a,b)=>a+b, 0) + 4, 14).fill(bg);
+          }
+          const fontName = bold ? 'Times-Bold' : 'Times-Roman';
+          cols.forEach((c, i) => {
+            doc.font(fontName).fontSize(7.5).fillColor('#000')
+              .text(c, colXs[i], y, { width: colWs[i], lineBreak: false });
+          });
+          // Thin horizontal line below
+          doc.moveTo(colXs[0] - 2, y + 13).lineTo(colXs[0] + colWs.reduce((a,b)=>a+b, 0) + 2, y + 13)
+            .strokeColor('#999').lineWidth(0.3).stroke();
+        };
 
-        // ── Report Meta ──
-        doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK).text('Report Information');
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(GOLD).lineWidth(1.5).stroke();
+        // ── Page 1: Title Block ──
+        doc.font('Times-Bold').fontSize(10).fillColor('#000')
+          .text('GOVERNMENT OF INDIA', MARGIN, MARGIN, { align: 'center', width: CONTENT_W });
+        doc.font('Times-Roman').fontSize(9)
+          .text('Ministry of Consumer Affairs, Food & Public Distribution', { align: 'center', width: CONTENT_W })
+          .text('Department of Consumer Affairs, Legal Metrology Division', { align: 'center', width: CONTENT_W });
+        doc.moveDown(0.3);
+        doc.moveTo(MARGIN, doc.y).lineTo(PAGE_W - MARGIN, doc.y)
+          .strokeColor('#000').lineWidth(1).stroke();
         doc.moveDown(0.4);
-        doc.font('Helvetica').fontSize(9).fillColor('#333');
-        const meta = [
-          ['Report ID', report.reportId],
-          ['Status', report.status],
-          ['Version', `v${report.version}`],
-          ['Generated On', new Date(report.createdAt).toLocaleString('en-IN')],
-          ['Rule Version', ruleConfig?.version || evaluation.standardReference || 'OIML R 76-1:2006 v1.0'],
-          ['Integrity Hash', report.integrityHash || 'Not yet finalized'],
-        ];
-        meta.forEach(([k, v]) => {
-          doc.font('Helvetica-Bold').text(`${k}: `, { continued: true }).font('Helvetica').text(String(v));
-        });
-        doc.moveDown(0.8);
 
-        // ── Evaluation Details ──
-        doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK).text('Evaluation Session');
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(GOLD).lineWidth(1.5).stroke();
-        doc.moveDown(0.4);
-        doc.font('Helvetica').fontSize(9).fillColor('#333');
-        const evalMeta = [
-          ['Evaluation Number', evaluation.evaluationNumber],
-          ['State', evaluation.state],
-          ['Date', new Date(evaluation.evaluationDate).toLocaleDateString('en-IN')],
-          ['Standard Reference', evaluation.standardReference],
-          ['Pattern Approval No.', evaluation.patternApprovalNo || 'N/A'],
-          ['Testing Officer', testingOfficer?.name || 'N/A'],
-          ['Reviewing Officer', reviewingOfficer?.name || 'N/A'],
-        ];
-        evalMeta.forEach(([k, v]) => {
-          doc.font('Helvetica-Bold').text(`${k}: `, { continued: true }).font('Helvetica').text(String(v));
-        });
-        doc.moveDown(0.8);
+        doc.font('Times-Bold').fontSize(14).fillColor('#000')
+          .text('OIML R 76 TEST REPORT', { align: 'center', width: CONTENT_W });
+        doc.font('Times-Roman').fontSize(9)
+          .text('Non-Automatic Weighing Instruments', { align: 'center', width: CONTENT_W });
+        doc.moveDown(0.3);
 
-        // ── Laboratory ──
-        doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK).text('Accredited Testing Laboratory');
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(GOLD).lineWidth(1.5).stroke();
-        doc.moveDown(0.4);
-        doc.font('Helvetica').fontSize(9).fillColor('#333');
-        [
-          ['Laboratory', laboratory.name],
-          ['Code', laboratory.code],
-          ['Address', laboratory.address],
-          ['Accreditation', laboratory.accreditationNumber],
-        ].forEach(([k, v]) => {
-          doc.font('Helvetica-Bold').text(`${k}: `, { continued: true }).font('Helvetica').text(String(v));
-        });
-        doc.moveDown(0.8);
+        doc.font('Times-Bold').fontSize(10)
+          .text(`Report No.: ${report.reportId}`, { align: 'center', width: CONTENT_W });
+        doc.font('Times-Roman').fontSize(9)
+          .text(`Version: ${report.version}  |  Date: ${new Date(report.createdAt).toLocaleDateString('en-IN')}  |  Status: ${report.status}`, { align: 'center', width: CONTENT_W });
+        doc.moveDown(0.2);
+        doc.moveTo(MARGIN, doc.y).lineTo(PAGE_W - MARGIN, doc.y)
+          .strokeColor('#000').lineWidth(0.5).stroke();
 
-        // ── Instrument ──
-        doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK).text('Instrument Under Test');
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(GOLD).lineWidth(1.5).stroke();
-        doc.moveDown(0.4);
-        doc.font('Helvetica').fontSize(9).fillColor('#333');
-        [
-          ['Passport ID', instrument.passportId],
-          ['Manufacturer', instrument.manufacturer],
-          ['Model', instrument.model],
-          ['Serial Number', instrument.serialNumber],
-          ['Type', instrument.instrumentType],
-          ['Accuracy Class', instrument.accuracyClass],
-          ['Max Capacity', `${instrument.maxCapacity} ${instrument.verificationUnits}`],
-          ['Min Capacity', `${instrument.minCapacity} ${instrument.verificationUnits}`],
-          ['Verification Interval (e)', `${instrument.scaleIntervalE} ${instrument.verificationUnits}`],
-        ].forEach(([k, v]) => {
-          doc.font('Helvetica-Bold').text(`${k}: `, { continued: true }).font('Helvetica').text(String(v));
-        });
+        // ── 1. Report Information ──
+        sectionHeading('Report Information');
+        doc.font('Times-Roman').fontSize(9).fillColor('#000');
+        fieldRow('Report ID', report.reportId);
+        fieldRow('Status', report.status);
+        fieldRow('Version', `${report.version}`);
+        fieldRow('Date of Issue', new Date(report.createdAt).toLocaleDateString('en-IN'));
+        fieldRow('Applicable Standard', ruleConfig?.version || evaluation.standardReference || 'OIML R 76-1:2006');
+        fieldRow('SHA-256 Integrity Hash', report.integrityHash || 'Pending finalization');
 
-        // ── Test Results ──
-        testRecords.forEach((record: any) => {
+        // ── 2. Evaluation Details ──
+        sectionHeading('Evaluation Details');
+        fieldRow('Evaluation No.', evaluation.evaluationNumber);
+        fieldRow('Current State', evaluation.state);
+        fieldRow('Date of Evaluation', new Date(evaluation.evaluationDate).toLocaleDateString('en-IN'));
+        fieldRow('Standard Reference', evaluation.standardReference);
+        fieldRow('Pattern Approval No.', evaluation.patternApprovalNo || 'N/A');
+        fieldRow('Testing Officer', testingOfficer?.name || 'N/A');
+        fieldRow('Reviewing Officer', reviewingOfficer?.name || 'N/A');
+
+        // ── 3. Testing Laboratory ──
+        sectionHeading('Testing Laboratory');
+        fieldRow('Laboratory Name', laboratory.name);
+        fieldRow('Laboratory Code', laboratory.code);
+        fieldRow('Accreditation No.', laboratory.accreditationNumber);
+        fieldRow('Address', laboratory.address);
+
+        // ── 4. Instrument Under Test ──
+        sectionHeading('Instrument Under Test');
+        fieldRow('Passport ID', instrument.passportId);
+        fieldRow('Manufacturer', instrument.manufacturer);
+        fieldRow('Model Designation', instrument.model);
+        fieldRow('Serial No.', instrument.serialNumber);
+        fieldRow('Instrument Type', instrument.instrumentType);
+        fieldRow('Accuracy Class', instrument.accuracyClass);
+        fieldRow('Maximum Capacity (Max)', `${instrument.maxCapacity} ${instrument.verificationUnits}`);
+        fieldRow('Minimum Capacity (Min)', `${instrument.minCapacity} ${instrument.verificationUnits}`);
+        fieldRow('Verification Scale Interval (e)', `${instrument.scaleIntervalE} ${instrument.verificationUnits}`);
+
+        // ── Test Results (each on own page) ──
+        testRecords.forEach((record: any, recIdx: number) => {
           doc.addPage();
-          doc.rect(0, 0, 595.28, 40).fill(DARK);
-          doc.font('Helvetica-Bold').fontSize(13).fillColor('white')
-            .text(`Test: ${record.testType.replace(/_/g, ' ')}`, 50, 12);
+          const testSecNo = sectionNo + 1 + recIdx;
 
-          doc.fillColor('#333').moveDown(1.5);
+          doc.font('Times-Bold').fontSize(12).fillColor(HEADING_COLOR)
+            .text(`${testSecNo}. Test Results: ${record.testType.replace(/_/g, ' ')}`);
+          doc.moveTo(MARGIN, doc.y + 2).lineTo(PAGE_W - MARGIN, doc.y + 2)
+            .strokeColor(LINE_COLOR).lineWidth(0.5).stroke();
+          doc.moveDown(0.5);
+
           const compliance = safeParse(record.complianceDetails);
           const observations = safeParse(record.observations, []);
           const calcResults = safeParse(record.calculationResults);
           const envData = safeParse(record.environmentalData, {});
 
-          // Status badge
           const verdict = compliance?.verdict || record.status;
-          const badgeColor = verdict === 'PASS' ? '#16a34a' : verdict === 'FAIL' ? '#dc2626' : '#d97706';
-          doc.font('Helvetica-Bold').fontSize(11).fillColor(badgeColor)
-            .text(`Verdict: ${verdict}`, { align: 'right' });
+          doc.font('Times-Bold').fontSize(10).fillColor('#000')
+            .text(`${testSecNo}.1 Conformity Verdict: ${verdict}`);
           doc.moveDown(0.3);
 
-          // Environmental data
+          // Environmental conditions sub-section
           if (Object.keys(envData).length > 0) {
-            doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('Environmental Conditions');
+            doc.font('Times-Bold').fontSize(10).fillColor('#000')
+              .text(`${testSecNo}.2 Environmental Conditions During Test`);
             doc.moveDown(0.2);
-            doc.font('Helvetica').fontSize(8).fillColor('#555');
-            if (envData.temperature) doc.text(`Temperature: ${envData.temperature} °C`);
-            if (envData.humidity) doc.text(`Humidity: ${envData.humidity} %RH`);
+            doc.font('Times-Roman').fontSize(9).fillColor('#000');
+            if (envData.temperature) doc.text(`Ambient Temperature: ${envData.temperature} °C`);
+            if (envData.humidity) doc.text(`Relative Humidity: ${envData.humidity} %RH`);
             if (envData.pressure) doc.text(`Barometric Pressure: ${envData.pressure} hPa`);
-            doc.moveDown(0.5);
+            doc.moveDown(0.4);
           }
 
           // Observations table
           if (observations.length > 0) {
-            doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('Test Observations');
+            const subSec = Object.keys(envData).length > 0 ? 3 : 2;
+            doc.font('Times-Bold').fontSize(10).fillColor('#000')
+              .text(`${testSecNo}.${subSec} Test Observations`);
             doc.moveDown(0.3);
-            doc.font('Helvetica').fontSize(8).fillColor('#333');
 
             if (record.testType === 'WEIGHING_PERFORMANCE') {
-              // Table header
-              const colX = [50, 130, 210, 290, 370, 440];
-              const colW = [80, 80, 80, 80, 70, 100];
-              doc.font('Helvetica-Bold').fontSize(7);
-              ['Load Point', 'Applied (m)', 'Indication (I)', 'Error (E)', 'MPE', 'Verdict'].forEach((h, i) => {
-                doc.text(h, colX[i], doc.y, { width: colW[i] });
-              });
-              doc.moveDown(0.3);
-              doc.font('Helvetica').fontSize(7);
+              const colXs = [MARGIN, MARGIN + 80, MARGIN + 160, MARGIN + 240, MARGIN + 320, MARGIN + 390];
+              const colWs = [78, 78, 78, 78, 68, 90];
+              drawTableRow(
+                ['Load Point', 'Applied (m)', 'Indication (I)', 'Error (E)', 'MPE', 'Verdict'],
+                colXs, colWs, doc.y, true, '#eeeeee'
+              );
+              doc.y += 16;
+              doc.font('Times-Roman').fontSize(7.5);
               observations.forEach((obs: any) => {
-                const rowY = doc.y;
-                if (rowY > 750) { doc.addPage(); }
-                doc.text(String(obs.loadLabel || obs.appliedLoad || ''), colX[0], doc.y, { width: colW[0], continued: false });
+                if (doc.y > 750) { doc.addPage(); }
+                drawTableRow(
+                  [
+                    String(obs.loadLabel || obs.appliedLoad || ''),
+                    String(obs.appliedLoad || ''),
+                    String(obs.indication || ''),
+                    String(obs.error || ''),
+                    String(obs.mpe || ''),
+                    String(obs.verdict || ''),
+                  ],
+                  colXs, colWs, doc.y
+                );
+                doc.y += 16;
               });
             }
-            doc.moveDown(0.5);
+            doc.moveDown(0.4);
           }
 
           // Calculation results
           if (calcResults) {
-            doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('Calculation Summary');
+            doc.font('Times-Bold').fontSize(10).fillColor('#000')
+              .text('Calculation Summary');
             doc.moveDown(0.2);
-            doc.font('Helvetica').fontSize(8).fillColor('#333');
+            doc.font('Times-Roman').fontSize(9).fillColor('#000');
             if (calcResults.maxError !== undefined) doc.text(`Maximum Observed Error: ${calcResults.maxError}`);
-            if (calcResults.maxMPE !== undefined) doc.text(`MPE at Max Error Load: ±${calcResults.maxMPE}`);
+            if (calcResults.maxMPE !== undefined) doc.text(`MPE at Maximum Error Load: ${calcResults.maxMPE}`);
             if (calcResults.stdDev !== undefined) doc.text(`Standard Deviation: ${calcResults.stdDev}`);
             if (calcResults.range !== undefined) doc.text(`Range (Max - Min): ${calcResults.range}`);
           }
 
-          // Why breakdown
+          // Compliance breakdown
           if (compliance?.whyBreakdown) {
-            doc.moveDown(0.5);
-            doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('Compliance Breakdown ("Show Me Why")');
+            doc.moveDown(0.4);
+            doc.font('Times-Bold').fontSize(10).fillColor('#000')
+              .text('Compliance Assessment Detail');
             doc.moveDown(0.2);
-            doc.font('Helvetica').fontSize(8).fillColor('#333');
+            doc.font('Times-Roman').fontSize(9).fillColor('#000');
             const wb = compliance.whyBreakdown;
             if (Array.isArray(wb)) {
               wb.forEach((item: any) => {
-                doc.text(`• ${item.description || item.message || JSON.stringify(item)}`);
+                doc.text(`- ${item.description || item.message || JSON.stringify(item)}`);
               });
             } else if (typeof wb === 'string') {
               doc.text(wb);
             }
           }
         });
+        sectionNo += testRecords.length;
 
-        // ── Final Page: Remarks and Signatures ──
+        // ── Conclusion & Conformity Statement ──
         doc.addPage();
-        doc.font('Helvetica-Bold').fontSize(14).fillColor(DARK).text('Conclusion & Certification', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(GOLD).lineWidth(2).stroke();
-        doc.moveDown(0.8);
+        sectionHeading('Conclusion and Conformity Statement');
+
+        const overallPass = testRecords.every((r: any) => {
+          const c = safeParse(r.complianceDetails);
+          return (c?.verdict || r.status) === 'PASS';
+        });
+        doc.font('Times-Roman').fontSize(9.5).fillColor('#000');
+        if (overallPass) {
+          doc.text('On the basis of the tests conducted in accordance with OIML R 76-1:2006 and the Legal Metrology (General) Rules, 2011, the instrument described in this report is found to CONFORM to the applicable requirements for its declared accuracy class.');
+        } else {
+          doc.text('On the basis of the tests conducted in accordance with OIML R 76-1:2006 and the Legal Metrology (General) Rules, 2011, the instrument described in this report DOES NOT CONFORM to one or more applicable requirements. Refer to individual test sections above for details.');
+        }
+        doc.moveDown(0.6);
 
         if (evaluation.generalRemarks) {
-          doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('Testing Officer Remarks:');
-          doc.font('Helvetica').fontSize(9).fillColor('#333').text(evaluation.generalRemarks);
-          doc.moveDown(0.5);
+          doc.font('Times-Bold').fontSize(9.5).text('Testing Officer Remarks:');
+          doc.font('Times-Roman').fontSize(9).text(evaluation.generalRemarks);
+          doc.moveDown(0.4);
         }
         if (evaluation.reviewRemarks) {
-          doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('Reviewing Officer Remarks:');
-          doc.font('Helvetica').fontSize(9).fillColor('#333').text(evaluation.reviewRemarks);
-          doc.moveDown(0.5);
+          doc.font('Times-Bold').fontSize(9.5).text('Reviewing Officer Remarks:');
+          doc.font('Times-Roman').fontSize(9).text(evaluation.reviewRemarks);
+          doc.moveDown(0.4);
         }
 
-        // Integrity Box with QR Code & Public Verification Link
+        // ── Signatures & Official Seal ──
+        doc.moveDown(1.5);
+        const sigY = doc.y + 15;
+        doc.font('Times-Roman').fontSize(8.5).fillColor('#000');
+
+        // Testing Officer block
+        doc.text('___________________________________', MARGIN, sigY);
+        doc.font('Times-Bold').text(testingOfficer?.name || 'Testing Officer', MARGIN, sigY + 12);
+        doc.font('Times-Roman').text(testingOfficer?.designation || 'Legal Metrology Officer', MARGIN, sigY + 22);
+        doc.text(`Date: ${new Date(evaluation.evaluationDate || report.createdAt).toLocaleDateString('en-IN')}`, MARGIN, sigY + 32);
+
+        // Reviewing Officer block
+        doc.text('___________________________________', 230, sigY);
+        doc.font('Times-Bold').text(reviewingOfficer?.name || 'Reviewing Officer', 230, sigY + 12);
+        doc.font('Times-Roman').text(reviewingOfficer?.designation || 'Senior Legal Metrology Officer', 230, sigY + 22);
+        doc.text(`Date: ${new Date(report.createdAt).toLocaleDateString('en-IN')}`, 230, sigY + 32);
+
+        // Official Seal box
+        const sealX = 425;
+        const sealY = sigY - 8;
+        doc.rect(sealX, sealY, 95, 60).strokeColor('#333').lineWidth(0.5).stroke();
+        doc.font('Times-Roman').fontSize(8).fillColor('#666')
+          .text('Official Seal', sealX, sealY + 24, { width: 95, align: 'center' });
+
+        // ── Verification Corner ──
+        const verifyY = sigY + 68;
         const verifyUrl = `${process.env.APP_URL || 'http://localhost:5173'}/verify?reportId=${report.reportId}`;
         let qrBuffer: Buffer | null = null;
         try {
-          qrBuffer = await QRCode.toBuffer(verifyUrl, { width: 120, margin: 1 });
+          qrBuffer = await QRCode.toBuffer(verifyUrl, { width: 80, margin: 0 });
         } catch (e) {
-          console.error('Failed to generate QR code for PDF:', e);
+          console.error('QR code generation failed:', e);
         }
 
-        doc.moveDown(1);
-        const boxY = doc.y;
-        doc.rect(50, boxY, 495, 75).fillAndStroke('#f0fdf4', GREEN);
-        
         if (qrBuffer) {
-          doc.image(qrBuffer, 470, boxY + 5, { width: 65, height: 65 });
+          doc.image(qrBuffer, MARGIN, verifyY, { width: 44, height: 44 });
         }
 
-        doc.font('Helvetica-Bold').fontSize(10).fillColor(GREEN)
-          .text('Zero-Trust Cryptographic Report Integrity (SHA-256):', 60, boxY + 8);
-        doc.font('Courier').fontSize(7.5).fillColor('#333')
-          .text(report.integrityHash || 'Hash generated upon finalization', 60, boxY + 22, { width: 400 });
-        
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(DARK)
-          .text('Public Verification Link: ', 60, boxY + 38, { continued: true })
-          .font('Helvetica').fillColor('#0066cc')
-          .text(verifyUrl, { link: verifyUrl, underline: true });
+        const textLeft = MARGIN + 52;
+        doc.font('Times-Bold').fontSize(8).fillColor('#000')
+          .text(`Report ID: ${report.reportId}`, textLeft, verifyY);
+        doc.font('Times-Roman').fontSize(7.5).fillColor('#000')
+          .text(`Verify report at: ${verifyUrl}`, textLeft, verifyY + 11);
+        doc.font('Courier').fontSize(6.5).fillColor('#333')
+          .text(`SHA-256: ${report.integrityHash || 'Pending finalization'}`, textLeft, verifyY + 23, { width: CONTENT_W - 60 });
 
-        doc.font('Helvetica').fontSize(7.5).fillColor('#555')
-          .text('Scan the QR code or visit the public portal to verify document authenticity against the National Cryptographic Ledger.', 60, boxY + 52, { width: 400 });
-
-        doc.y = boxY + 85;
-
-        // Signatures
-        doc.moveDown(3);
-        const sigY = doc.y + 20;
-        doc.font('Helvetica').fontSize(8).fillColor('#666');
-        doc.text('_________________________________', 50, sigY);
-        doc.text(testingOfficer?.name || 'Testing Officer', 50, sigY + 12);
-        doc.text(testingOfficer?.designation || '', 50, sigY + 22);
-        doc.text('_________________________________', 340, sigY);
-        doc.text(reviewingOfficer?.name || 'Reviewing Officer', 340, sigY + 12);
-        doc.text(reviewingOfficer?.designation || '', 340, sigY + 22);
-
-        // Footer on all pages
+        // ── Running Header & Footer on all pages ──
         const pages = doc.bufferedPageRange();
         for (let i = pages.start; i < pages.start + pages.count; i++) {
           doc.switchToPage(i);
-          doc.font('Helvetica').fontSize(7).fillColor('#999')
+          // Running header on every page
+          doc.font('Times-Roman').fontSize(7.5).fillColor('#333')
+            .text(`Report No.: ${report.reportId}`, MARGIN, 25, { width: 250, align: 'left' })
+            .text(`Page ${i + 1} of ${pages.count}`, PAGE_W - MARGIN - 150, 25, { width: 150, align: 'right' });
+          doc.moveTo(MARGIN, 36).lineTo(PAGE_W - MARGIN, 36).strokeColor('#888').lineWidth(0.3).stroke();
+
+          // Running footer on every page
+          doc.font('Times-Roman').fontSize(7).fillColor('#444')
             .text(
-              `MarkSure | Report ${report.reportId} | Page ${i + 1} of ${pages.count} | Generated: ${new Date().toLocaleString('en-IN')}`,
-              50, 800, { align: 'center', width: 495 }
+              `Document Control: LM-OIML-R76-TR | Legal Metrology Division, Department of Consumer Affairs, Government of India`,
+              MARGIN, 810, { align: 'center', width: CONTENT_W }
             );
         }
 
@@ -282,87 +341,124 @@ export class ReportGenerator {
 
     const { report, evaluation, instrument, laboratory, testRecords, testingOfficer, reviewingOfficer, ruleConfig } = input;
 
-    const heading = (text: string, level: typeof HeadingLevel[keyof typeof HeadingLevel] = HeadingLevel.HEADING_2) =>
-      new Paragraph({ heading: level, spacing: { before: 200, after: 100 }, children: [new TextRun({ text, bold: true, color: '006c51' })] });
+    let secNo = 0;
+    const numberedHeading = (text: string, level: typeof HeadingLevel[keyof typeof HeadingLevel] = HeadingLevel.HEADING_2) => {
+      secNo++;
+      return new Paragraph({ heading: level, spacing: { before: 240, after: 120 }, children: [new TextRun({ text: `${secNo}. ${text}`, bold: true, size: 24, font: 'Times New Roman' })] });
+    };
 
     const field = (label: string, value: string) =>
       new Paragraph({ spacing: { after: 40 }, children: [
-        new TextRun({ text: `${label}: `, bold: true, size: 20 }),
-        new TextRun({ text: value, size: 20 }),
+        new TextRun({ text: `${label}: `, bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: value, size: 20, font: 'Times New Roman' }),
       ]});
 
     const sections: any[] = [];
-
-    // ── Main Section ──
     const children: any[] = [];
 
+    // Title block
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 60 },
+      children: [new TextRun({ text: 'GOVERNMENT OF INDIA', bold: true, size: 22, font: 'Times New Roman' })],
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 40 },
+      children: [new TextRun({ text: 'Ministry of Consumer Affairs, Food & Public Distribution', size: 18, font: 'Times New Roman' })],
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 120 },
+      children: [new TextRun({ text: 'Department of Consumer Affairs, Legal Metrology Division', size: 18, font: 'Times New Roman' })],
+    }));
     children.push(new Paragraph({
       heading: HeadingLevel.TITLE,
       alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: 'MarkSure — OIML R-76 Test Report', bold: true, size: 32, color: '006c51' })],
+      children: [new TextRun({ text: 'OIML R 76 TEST REPORT', bold: true, size: 32, font: 'Times New Roman' })],
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 60 },
+      children: [new TextRun({ text: 'Non-Automatic Weighing Instruments', size: 20, font: 'Times New Roman' })],
     }));
     children.push(new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
-      children: [new TextRun({ text: 'Government of India | Legal Metrology Division', size: 18, color: '666666', italics: true })],
+      children: [new TextRun({ text: `Report No.: ${report.reportId}  |  Version: ${report.version}  |  Date: ${new Date(report.createdAt).toLocaleDateString('en-IN')}`, size: 18, font: 'Times New Roman' })],
     }));
 
-    // Report meta
-    children.push(heading('Report Information'));
+    // 1. Report Information
+    children.push(numberedHeading('Report Information'));
     children.push(field('Report ID', report.reportId));
     children.push(field('Status', report.status));
-    children.push(field('Version', `v${report.version}`));
-    children.push(field('Rule Version', ruleConfig?.version || evaluation.standardReference || 'OIML R 76-1:2006 v1.0'));
-    children.push(field('Generated', new Date(report.createdAt).toLocaleString('en-IN')));
-    children.push(field('Integrity Hash (SHA-256)', report.integrityHash || 'Pending finalization'));
+    children.push(field('Version', `${report.version}`));
+    children.push(field('Date of Issue', new Date(report.createdAt).toLocaleDateString('en-IN')));
+    children.push(field('Applicable Standard', ruleConfig?.version || evaluation.standardReference || 'OIML R 76-1:2006'));
+    children.push(field('SHA-256 Integrity Hash', report.integrityHash || 'Pending finalization'));
 
-    // Evaluation
-    children.push(heading('Evaluation Session'));
-    children.push(field('Evaluation Number', evaluation.evaluationNumber));
-    children.push(field('State', evaluation.state));
-    children.push(field('Date', new Date(evaluation.evaluationDate).toLocaleDateString('en-IN')));
+    // 2. Evaluation Details
+    children.push(numberedHeading('Evaluation Details'));
+    children.push(field('Evaluation No.', evaluation.evaluationNumber));
+    children.push(field('Current State', evaluation.state));
+    children.push(field('Date of Evaluation', new Date(evaluation.evaluationDate).toLocaleDateString('en-IN')));
+    children.push(field('Standard Reference', evaluation.standardReference));
     children.push(field('Testing Officer', testingOfficer?.name || 'N/A'));
     children.push(field('Reviewing Officer', reviewingOfficer?.name || 'N/A'));
 
-    // Laboratory
-    children.push(heading('Accredited Testing Laboratory'));
-    children.push(field('Laboratory', laboratory.name));
-    children.push(field('Code', laboratory.code));
-    children.push(field('Accreditation', laboratory.accreditationNumber));
+    // 3. Testing Laboratory
+    children.push(numberedHeading('Testing Laboratory'));
+    children.push(field('Laboratory Name', laboratory.name));
+    children.push(field('Laboratory Code', laboratory.code));
+    children.push(field('Accreditation No.', laboratory.accreditationNumber));
     children.push(field('Address', laboratory.address));
 
-    // Instrument
-    children.push(heading('Instrument Under Test'));
+    // 4. Instrument Under Test
+    children.push(numberedHeading('Instrument Under Test'));
     children.push(field('Passport ID', instrument.passportId));
     children.push(field('Manufacturer', instrument.manufacturer));
-    children.push(field('Model', instrument.model));
-    children.push(field('Serial Number', instrument.serialNumber));
+    children.push(field('Model Designation', instrument.model));
+    children.push(field('Serial No.', instrument.serialNumber));
     children.push(field('Accuracy Class', instrument.accuracyClass));
-    children.push(field('Max Capacity', `${instrument.maxCapacity} ${instrument.verificationUnits}`));
-    children.push(field('Verification Interval (e)', `${instrument.scaleIntervalE} ${instrument.verificationUnits}`));
+    children.push(field('Maximum Capacity (Max)', `${instrument.maxCapacity} ${instrument.verificationUnits}`));
+    children.push(field('Verification Scale Interval (e)', `${instrument.scaleIntervalE} ${instrument.verificationUnits}`));
 
     // Test Records
-    testRecords.forEach((record: any) => {
+    testRecords.forEach((record: any, idx: number) => {
       const compliance = safeParse(record.complianceDetails);
       const verdict = compliance?.verdict || record.status;
+      const testSecNo = secNo + 1 + idx;
 
-      children.push(heading(`Test: ${record.testType.replace(/_/g, ' ')}`));
-      children.push(field('Verdict', verdict));
+      children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 120 }, children: [
+        new TextRun({ text: `${testSecNo}. Test Results: ${record.testType.replace(/_/g, ' ')}`, bold: true, size: 24, font: 'Times New Roman' }),
+      ]}));
+      children.push(field('Conformity Verdict', verdict));
       children.push(field('Tested By', record.testedByName || 'N/A'));
 
       if (compliance?.whyBreakdown) {
-        children.push(new Paragraph({ spacing: { before: 80 }, children: [new TextRun({ text: 'Compliance Breakdown:', bold: true, size: 20 })] }));
+        children.push(new Paragraph({ spacing: { before: 80 }, children: [new TextRun({ text: 'Compliance Assessment Detail:', bold: true, size: 20, font: 'Times New Roman' })] }));
         const wb = Array.isArray(compliance.whyBreakdown) ? compliance.whyBreakdown : [compliance.whyBreakdown];
         wb.forEach((item: any) => {
           children.push(new Paragraph({ spacing: { after: 20 }, children: [
-            new TextRun({ text: `  • ${item.description || item.message || JSON.stringify(item)}`, size: 18 }),
+            new TextRun({ text: `  - ${item.description || item.message || JSON.stringify(item)}`, size: 18, font: 'Times New Roman' }),
           ]}));
         });
       }
     });
+    secNo += testRecords.length;
 
-    // Remarks
-    children.push(heading('Conclusion & Certification'));
+    // Conclusion
+    children.push(numberedHeading('Conclusion and Conformity Statement'));
+    const overallPass = testRecords.every((r: any) => {
+      const c = safeParse(r.complianceDetails);
+      return (c?.verdict || r.status) === 'PASS';
+    });
+    if (overallPass) {
+      children.push(new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: 'On the basis of the tests conducted in accordance with OIML R 76-1:2006 and the Legal Metrology (General) Rules, 2011, the instrument described in this report is found to CONFORM to the applicable requirements for its declared accuracy class.', size: 20, font: 'Times New Roman' })] }));
+    } else {
+      children.push(new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: 'On the basis of the tests conducted in accordance with OIML R 76-1:2006 and the Legal Metrology (General) Rules, 2011, the instrument described in this report DOES NOT CONFORM to one or more applicable requirements. Refer to individual test sections for details.', size: 20, font: 'Times New Roman' })] }));
+    }
+
     if (evaluation.generalRemarks) {
       children.push(field('Testing Officer Remarks', evaluation.generalRemarks));
     }
@@ -370,16 +466,31 @@ export class ReportGenerator {
       children.push(field('Reviewing Officer Remarks', evaluation.reviewRemarks));
     }
 
-    // Signatures
+    // Signatures and Official Seal
+    const dateStr = new Date(evaluation.evaluationDate || report.createdAt).toLocaleDateString('en-IN');
+    const reviewDateStr = new Date(report.createdAt).toLocaleDateString('en-IN');
     children.push(new Paragraph({ spacing: { before: 400 }, children: [] }));
     children.push(new Paragraph({ children: [
-      new TextRun({ text: '___________________________          ___________________________', size: 20 }),
+      new TextRun({ text: '___________________________          ___________________________          [  OFFICIAL SEAL  ]', size: 18, font: 'Times New Roman' }),
     ]}));
     children.push(new Paragraph({ children: [
-      new TextRun({ text: `${testingOfficer?.name || 'Testing Officer'}                    ${reviewingOfficer?.name || 'Reviewing Officer'}`, size: 18 }),
+      new TextRun({ text: `${testingOfficer?.name || 'Testing Officer'}                    ${reviewingOfficer?.name || 'Reviewing Officer'}`, size: 18, bold: true, font: 'Times New Roman' }),
+    ]}));
+    children.push(new Paragraph({ children: [
+      new TextRun({ text: `${testingOfficer?.designation || 'Legal Metrology Officer'}        ${reviewingOfficer?.designation || 'Senior Legal Metrology Officer'}`, size: 16, font: 'Times New Roman', color: '444444' }),
+    ]}));
+    children.push(new Paragraph({ spacing: { after: 300 }, children: [
+      new TextRun({ text: `Date: ${dateStr}                           Date: ${reviewDateStr}`, size: 16, font: 'Times New Roman', color: '444444' }),
     ]}));
 
-    sections.push({ properties: {}, children });
+    // Document Integrity Block
+    const docxVerifyUrl = `${process.env.APP_URL || 'http://localhost:5173'}/verify?reportId=${report.reportId}`;
+    children.push(numberedHeading('Document Integrity Verification'));
+    children.push(field('Report ID', report.reportId));
+    children.push(field('Verification URL', docxVerifyUrl));
+    children.push(field('SHA-256 Hash', report.integrityHash || 'Pending finalization'));
+
+    sections.push({ properties: { page: { margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 } } }, children });
 
     const docxDoc = new Document({ sections });
     return await Packer.toBuffer(docxDoc);
@@ -403,10 +514,10 @@ export class ReportGenerator {
         // ── TOP WARNING BANNER: SIMULATION ONLY ──
         doc.rect(0, 0, 595.28, 65).fill('#7f1d1d'); // deep red
         doc.font('Helvetica-Bold').fontSize(14).fillColor('#ffffff')
-          .text('⚠️ SIMULATION ONLY — NOT A LEGAL RECORD', 40, 16, { align: 'center' });
+          .text('SIMULATION ONLY: NOT A LEGAL RECORD', 40, 16, { align: 'center' });
         doc.fontSize(8).font('Helvetica')
-          .text('Official Metrological Impact Assessment Sandbox • Non-Binding Regulatory Forecast', 40, 34, { align: 'center' })
-          .text('Does NOT alter, amend, or invalidate any legal certificates issued under Legal Metrology Act 2009', 40, 46, { align: 'center' });
+          .text('Official Metrological Impact Assessment Sandbox | Non-Binding Regulatory Forecast', 40, 34, { align: 'center' })
+          .text('Does not alter or invalidate any legal certificates issued under Legal Metrology Act, 2009', 40, 46, { align: 'center' });
 
         doc.fillColor('#1f2937').moveDown(2.5);
 
@@ -476,7 +587,7 @@ export class ReportGenerator {
             // Re-print top banner on subsequent pages
             doc.rect(0, 0, 595.28, 30).fill('#7f1d1d');
             doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff')
-              .text('⚠️ SIMULATION ONLY — NOT A LEGAL RECORD', 40, 10, { align: 'center' });
+              .text('SIMULATION ONLY: NOT A LEGAL RECORD', 40, 10, { align: 'center' });
             doc.y = 45;
           }
 
@@ -502,7 +613,7 @@ export class ReportGenerator {
             .text(r.simulatedOverallVerdict || 'PASS', 360, rowY + 8);
 
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(isFlipped ? '#b91c1c' : '#059669')
-            .text(isFlipped ? `SHIFT: ${r.originalOverallVerdict} → ${r.simulatedOverallVerdict}` : 'UNCHANGED (COMPLIANT)', 440, rowY + 8);
+            .text(isFlipped ? `SHIFT: ${r.originalOverallVerdict} -> ${r.simulatedOverallVerdict}` : 'UNCHANGED (COMPLIANT)', 440, rowY + 8);
 
           doc.y = rowY + 28;
 
@@ -523,7 +634,7 @@ export class ReportGenerator {
           doc.switchToPage(i);
           doc.fontSize(7).font('Helvetica-Bold').fillColor('#991b1b')
             .text(
-              '⚠️ SIMULATION ONLY — NOT A LEGAL RECORD • Ministry of Consumer Affairs, Food & Public Distribution • Directorate of Legal Metrology',
+              'SIMULATION ONLY: NOT A LEGAL RECORD | Ministry of Consumer Affairs, Food & Public Distribution | Directorate of Legal Metrology',
               40,
               800,
               { align: 'center', width: 515 }

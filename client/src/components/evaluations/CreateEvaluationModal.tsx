@@ -140,7 +140,7 @@ export const CreateEvaluationModal: React.FC<CreateEvaluationModalProps> = ({
             <option value="">-- Select Instrument from National Registry --</option>
             {instruments.map((inst) => (
               <option key={inst.id} value={inst.id}>
-                {inst.manufacturer} {inst.model} (SN: {inst.serialNumber}) — {inst.accuracyClass} Max: {inst.maxCapacity}{inst.verificationUnits}
+                {inst.manufacturer} {inst.model} (SN: {inst.serialNumber}) - {inst.accuracyClass} Max: {inst.maxCapacity}{inst.verificationUnits}
               </option>
             ))}
           </select>

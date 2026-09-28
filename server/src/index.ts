@@ -15,6 +15,7 @@ import searchRoutes from './routes/search';
 import auditRoutes from './routes/audit';
 import ruleConfigRoutes from './routes/ruleConfig';
 import simulatorRoutes from './routes/simulator';
+import passportRoutes from './routes/passports';
 import prisma from './prisma';
 
 const app = express();
@@ -57,6 +58,7 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/laboratories', laboratoryRoutes);
 app.use('/api/instruments', instrumentRoutes);
+app.use('/api/passports', passportRoutes);
 app.use('/api/evaluations', testRoutes);
 app.use('/api/evaluations', evaluationRoutes);
 app.use('/api/reports', reportRoutes);

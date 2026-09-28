@@ -5,8 +5,7 @@ import {
   HardDrive, 
   WifiOff, 
   AlertTriangle,
-  Clock,
-  Sparkles
+  Clock
 } from 'lucide-react';
 
 export type SyncStatusType = 'SAVED_LOCALLY' | 'SYNCING' | 'SYNCED' | 'OFFLINE' | 'CONFLICT';
@@ -83,7 +82,7 @@ export const SelfHealingStatusBar: React.FC<SelfHealingStatusBarProps> = ({
         {status === 'OFFLINE' && (
           <>
             <WifiOff className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-            <span className="font-semibold text-[11px]">Offline — Saved locally</span>
+            <span className="font-semibold text-[11px]">Offline: Saved locally</span>
             <span className="text-[10px] text-slate-600 hidden md:inline">
               (Safe in browser storage • Auto-syncs when online)
             </span>
@@ -124,7 +123,7 @@ export const SelfHealingStatusBar: React.FC<SelfHealingStatusBarProps> = ({
         )}
 
         <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/70 text-slate-600 border border-slate-200/80">
-          Self-Healing Engine
+          Auto-Save
         </span>
       </div>
     </div>

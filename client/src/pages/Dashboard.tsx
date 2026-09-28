@@ -27,8 +27,7 @@ import {
   Download,
   Search,
   ExternalLink,
-  Layers,
-  Sparkles
+  Layers
 } from 'lucide-react';
 import { CreateInstrumentModal } from '../components/instruments/CreateInstrumentModal';
 import { CreateEvaluationModal } from '../components/evaluations/CreateEvaluationModal';
@@ -115,10 +114,10 @@ export const Dashboard: React.FC = () => {
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold font-serif text-[#006c51] mt-0.5">
-            Welcome, {user?.name || 'Officer'}
+            Legal Metrology Operations Dashboard
           </h1>
           <p className="text-xs text-gov-sand-600 mt-0.5">
-            {user?.designation || 'Legal Metrology Officer'} • {user?.department || 'Department of Consumer Affairs'}
+            {user?.name || 'Officer'} | {user?.designation || 'Legal Metrology Officer'} • {user?.department || 'Department of Consumer Affairs'}
           </p>
         </div>
 
@@ -159,16 +158,30 @@ export const Dashboard: React.FC = () => {
               >
                 <FileCheck2 className="w-3.5 h-3.5 mr-1.5" /> Start Evaluation
               </button>
+              <Link
+                to="/passports"
+                className="btn-gov-secondary text-xs"
+              >
+                <BookMarked className="w-3.5 h-3.5 mr-1.5 text-[#006c51]" /> Passports Registry
+              </Link>
             </>
           )}
 
           {isReviewingOfficer && (
-            <Link
-              to="/evaluations?state=Under%20Review"
-              className="btn-gov-primary text-xs"
-            >
-              <AlertTriangle className="w-3.5 h-3.5 mr-1.5" /> Review Queue ({underReviewCount})
-            </Link>
+            <div className="flex gap-2">
+              <Link
+                to="/evaluations?state=Under%20Review"
+                className="btn-gov-primary text-xs"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 mr-1.5" /> Review Queue ({underReviewCount})
+              </Link>
+              <Link
+                to="/passports"
+                className="btn-gov-secondary text-xs"
+              >
+                <BookMarked className="w-3.5 h-3.5 mr-1.5 text-[#006c51]" /> Passports
+              </Link>
+            </div>
           )}
         </div>
       </div>
@@ -350,7 +363,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ── THREE PLATFORM DIFFERENTIATORS (CORE USPs) SPOTLIGHT ── */}
+      {/* ── KEY PORTAL CAPABILITIES ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* USP 1: Zero-Trust Report Integrity */}
         <div className="gov-card p-5 border-l-4 border-l-[#006c51] flex flex-col justify-between hover:shadow-md transition-shadow">
@@ -359,13 +372,13 @@ export const Dashboard: React.FC = () => {
               <ShieldCheck className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#a37b12] block">
-              Differentiator 1
+              Report Integrity
             </span>
             <h3 className="text-sm font-bold font-serif text-gov-sand-900">
-              Zero-Trust Cryptographic Integrity
+              SHA-256 Report Hashing
             </h3>
             <p className="text-xs text-gov-sand-600 leading-relaxed">
-              Every finalized report receives a SHA-256 digital fingerprint stored in the ledger. Public verification verifies tamper-proof legitimacy.
+              Each finalized test report is assigned a SHA-256 hash stored in the audit ledger. Any subsequent modification to the report is detectable through public hash verification.
             </p>
           </div>
           <div className="mt-4 pt-3 border-t border-[#ece7d8]">
@@ -382,13 +395,13 @@ export const Dashboard: React.FC = () => {
               <Cpu className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#a37b12] block">
-              Differentiator 2
+              Regulatory Tools
             </span>
             <h3 className="text-sm font-bold font-serif text-gov-sand-900">
-              OIML Rule Impact Simulator
+              Rule Impact Simulator
             </h3>
             <p className="text-xs text-gov-sand-600 leading-relaxed">
-              Test candidate regulatory rules against historical evaluation records in a read-only sandbox. Pinpoint which certificates would flip PASS → FAIL.
+              Evaluate proposed regulatory threshold changes against existing evaluation records in read-only mode. Identifies which instruments would change conformity status.
             </p>
           </div>
           <div className="mt-4 pt-3 border-t border-[#ece7d8]">
@@ -405,13 +418,13 @@ export const Dashboard: React.FC = () => {
               <History className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#a37b12] block">
-              Differentiator 3
+              Accountability
             </span>
             <h3 className="text-sm font-bold font-serif text-gov-sand-900">
-              Complete Regulatory Audit Trail
+              Audit Trail and Activity Log
             </h3>
             <p className="text-xs text-gov-sand-600 leading-relaxed">
-              Cryptographically timestamped accountability log capturing every actor, state change, and certificate export across the entire lifecycle.
+              Timestamped record of all user actions, state transitions, and certificate exports. Each entry is linked to the responsible officer and cannot be altered after creation.
             </p>
           </div>
           <div className="mt-4 pt-3 border-t border-[#ece7d8]">
@@ -475,6 +488,14 @@ export const Dashboard: React.FC = () => {
                   </div>
 
                   <div className="flex items-center space-x-1.5 shrink-0">
+                    <Link
+                      to={`/passport/${rpt.evaluation?.instrument?.passportId || rpt.evaluation?.instrument?.id || rpt.evaluation?.instrumentId}`}
+                      className="p-1.5 text-[#006c51] hover:bg-[#faf8f2] rounded border border-[#ded7c4] flex items-center gap-1 text-[11px]"
+                      title="View Instrument Digital Passport"
+                    >
+                      <BookMarked className="w-3.5 h-3.5 text-[#a37b12]" />
+                      <span className="hidden sm:inline">Passport</span>
+                    </Link>
                     <Link to={`/reports/${rpt.id}`} className="p-1.5 text-[#006c51] hover:bg-[#faf8f2] rounded border border-[#ded7c4]" title="View Report">
                       <ExternalLink className="w-3.5 h-3.5" />
                     </Link>
@@ -535,9 +556,19 @@ export const Dashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  <Link to={`/evaluations/${ev.id}`} className="btn-gov-secondary text-xs">
-                    Open &rarr;
-                  </Link>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Link
+                      to={`/passport/${ev.instrument?.passportId || ev.instrument?.id || ev.instrumentId}`}
+                      className="btn-gov-outline text-[11px] py-1 px-2.5 flex items-center gap-1"
+                      title="View Instrument Digital Passport"
+                    >
+                      <BookMarked className="w-3.5 h-3.5 text-[#a37b12]" />
+                      <span className="hidden sm:inline">Passport</span>
+                    </Link>
+                    <Link to={`/evaluations/${ev.id}`} className="btn-gov-secondary text-[11px] py-1 px-2.5">
+                      Open &rarr;
+                    </Link>
+                  </div>
                 </div>
               ))}
             </div>

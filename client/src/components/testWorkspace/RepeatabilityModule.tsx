@@ -8,7 +8,6 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   XCircle, 
-  Sparkles, 
   Info, 
   Clock,
   RefreshCw 

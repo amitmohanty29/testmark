@@ -5,6 +5,7 @@ import { upload } from '../middleware/upload';
 import { OimlComplianceEngine, TestComplianceResult } from '../engine/complianceEngine';
 import { VerificationType } from '../engine/calculationEngine';
 import { logAudit } from '../middleware/auditLogger';
+import { PassportService } from '../engine/passportService';
 
 const router = Router();
 
@@ -313,11 +314,16 @@ router.put(
         completedAt: calculatedStatus !== 'DRAFT' ? new Date() : null,
       };
 
+      const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+
       let savedRecord;
       if (existing) {
         savedRecord = await prisma.testRecord.update({
           where: { id: existing.id },
-          data: dataToSave,
+          data: {
+            ...dataToSave,
+            passportId: passport.id,
+          },
           include: { attachments: true },
         });
       } else {
@@ -325,6 +331,7 @@ router.put(
           data: {
             ...dataToSave,
             evaluationId,
+            passportId: passport.id,
           },
           include: { attachments: true },
         });
@@ -340,6 +347,28 @@ router.put(
 
       // Only log timeline event on manual saves or finalizations (avoid spamming on frame-by-frame auto-sync)
       if (!isAutoSync || calculatedStatus !== 'DRAFT') {
+        try {
+          await PassportService.recordEvent(
+            prisma,
+            passport.id,
+            'TEST_RECORDED',
+            'TEST_RECORD',
+            savedRecord.id,
+            req.user!.id,
+            `Test recorded: ${testType} with result [${calculatedStatus}].`,
+            {
+              testType,
+              status: calculatedStatus,
+              evaluationNumber: evaluation.evaluationNumber,
+              evaluationId,
+              verificationType,
+              testedBy: req.user!.name,
+            }
+          );
+        } catch (passErr) {
+          console.warn('Failed to record passport event for test:', passErr);
+        }
+
         await prisma.timelineEvent.create({
           data: {
             instrumentId: evaluation.instrumentId,
@@ -402,6 +431,16 @@ router.post(
         return;
       }
 
+      const evaluation = await prisma.evaluation.findUnique({
+        where: { id: req.params.evaluationId as string },
+      });
+
+      let passportId = record.passportId;
+      if (!passportId && evaluation) {
+        const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+        passportId = passport.id;
+      }
+
       let finalUrl = fileUrl || '';
       let finalName = title || 'Evidence Attachment';
       let fileSize: number | null = null;
@@ -425,8 +464,33 @@ router.post(
           fileUrl: finalUrl,
           fileType: fileType || (req.file?.mimetype.startsWith('image') ? 'PHOTO' : 'DOCUMENT'),
           fileSize,
+          passportId: passportId || null,
         },
       });
+
+      if (passportId) {
+        try {
+          await PassportService.recordEvent(
+            prisma,
+            passportId,
+            'EVIDENCE_ATTACHED',
+            'TEST_ATTACHMENT',
+            attachment.id,
+            req.user!.id,
+            `Evidence attached: ${attachment.title} (${attachment.fileName}).`,
+            {
+              title: attachment.title,
+              fileName: attachment.fileName,
+              fileUrl: attachment.fileUrl,
+              fileType: attachment.fileType,
+              fileSize: attachment.fileSize,
+              testRecordId,
+            }
+          );
+        } catch (passErr) {
+          console.warn('Failed to record passport event for attachment:', passErr);
+        }
+      }
 
       res.status(201).json({
         attachment,
@@ -511,6 +575,26 @@ router.post(
           instrument: true,
         },
       });
+
+      try {
+        const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'SUBMITTED_FOR_REVIEW',
+          'EVALUATION',
+          evaluation.id,
+          req.user!.id,
+          `Evaluation ${evaluation.evaluationNumber} submitted for Reviewing Officer endorsement with ${completedTests.length} completed test modules.`,
+          {
+            evaluationNumber: evaluation.evaluationNumber,
+            completedTests: completedTests.length,
+            notes: notes || '',
+          }
+        );
+      } catch (passErr) {
+        console.warn('Failed to record passport event for submit:', passErr);
+      }
 
       await prisma.timelineEvent.create({
         data: {
@@ -600,6 +684,26 @@ router.post(
           data: { status: 'CERTIFIED' },
         });
 
+        try {
+          const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+          await PassportService.recordEvent(
+            prisma,
+            passport.id,
+            'REVIEW_APPROVED',
+            'EVALUATION',
+            evaluation.id,
+            req.user!.id,
+            `Evaluation ${evaluation.evaluationNumber} approved and certified. Remarks: "${remarks.trim()}".`,
+            {
+              evaluationNumber: evaluation.evaluationNumber,
+              remarks: remarks.trim(),
+              status: 'CERTIFIED',
+            }
+          );
+        } catch (passErr) {
+          console.warn('Failed to record passport event for approval:', passErr);
+        }
+
         await prisma.timelineEvent.create({
           data: {
             instrumentId: evaluation.instrumentId,
@@ -631,6 +735,25 @@ router.post(
             reviewingOfficer: true,
           },
         });
+
+        try {
+          const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+          await PassportService.recordEvent(
+            prisma,
+            passport.id,
+            'REVIEW_RETURNED',
+            'EVALUATION',
+            evaluation.id,
+            req.user!.id,
+            `Evaluation ${evaluation.evaluationNumber} returned for revision. Remarks: "${remarks.trim()}".`,
+            {
+              evaluationNumber: evaluation.evaluationNumber,
+              remarks: remarks.trim(),
+            }
+          );
+        } catch (passErr) {
+          console.warn('Failed to record passport event for return:', passErr);
+        }
 
         await prisma.timelineEvent.create({
           data: {

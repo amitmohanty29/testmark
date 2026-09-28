@@ -119,7 +119,7 @@ export const Login: React.FC = () => {
               disabled={loading}
               className="w-full btn-gov-primary py-2.5 mt-2 text-sm shadow-sm"
             >
-              {loading ? 'Authenticating...' : 'Sign In to MarkSure Engine'}
+              {loading ? 'Authenticating...' : 'Sign In'}
               {!loading && <ArrowRight className="w-4 h-4 ml-2" />}
             </button>
           </form>
@@ -132,7 +132,7 @@ export const Login: React.FC = () => {
                 Demo Credentials (1-Click)
               </span>
               <span className="text-[10px] bg-gov-sand-200 px-1.5 py-0.5 rounded text-gov-sand-700 font-mono">
-                SIH26035
+                DEMO
               </span>
             </div>
 

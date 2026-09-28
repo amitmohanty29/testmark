@@ -175,7 +175,7 @@ export const EvaluationsList: React.FC = () => {
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="font-bold text-gov-sand-900">
-                        {ev.instrument?.model || '—'}
+                        {ev.instrument?.model || 'N/A'}
                       </div>
                       <div className="text-[11px] text-gov-sand-500">
                         {ev.instrument?.manufacturer} (SN: {ev.instrument?.serialNumber})

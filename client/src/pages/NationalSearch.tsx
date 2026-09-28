@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { 
-  Search, 
-  Filter, 
-  Scale, 
-  FileCheck2, 
-  FileText, 
-  BookMarked, 
-  ArrowRight, 
-  Building2, 
-  User, 
-  Calendar, 
-  ShieldCheck, 
+import {
+  Search,
+  Filter,
+  Scale,
+  FileCheck2,
+  FileText,
+  BookMarked,
+  ArrowRight,
+  Building2,
+  User,
+  Calendar,
+  ShieldCheck,
   RefreshCw,
   SlidersHorizontal,
   X
@@ -113,9 +113,8 @@ export const NationalSearch: React.FC = () => {
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-            className={`btn-gov-secondary text-xs flex items-center gap-1.5 ${
-              showAdvancedFilters ? 'bg-[#006c51] text-white hover:bg-[#005842]' : ''
-            }`}
+            className={`btn-gov-secondary text-xs flex items-center gap-1.5 ${showAdvancedFilters ? 'bg-[#006c51] text-white hover:bg-[#005842]' : ''
+              }`}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>{showAdvancedFilters ? 'Hide Multi-Filters' : 'Multi-Filter Criteria'}</span>
@@ -274,41 +273,37 @@ export const NationalSearch: React.FC = () => {
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-              activeTab === 'all'
+            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${activeTab === 'all'
                 ? 'bg-[#006c51] text-white'
                 : 'text-gov-sand-700 hover:bg-[#faf8f2]'
-            }`}
+              }`}
           >
             All Results ({totalResults})
           </button>
           <button
             onClick={() => setActiveTab('evaluations')}
-            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-              activeTab === 'evaluations'
+            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${activeTab === 'evaluations'
                 ? 'bg-[#006c51] text-white'
                 : 'text-gov-sand-700 hover:bg-[#faf8f2]'
-            }`}
+              }`}
           >
             Evaluations ({evaluations.length})
           </button>
           <button
             onClick={() => setActiveTab('reports')}
-            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-              activeTab === 'reports'
+            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${activeTab === 'reports'
                 ? 'bg-[#006c51] text-white'
                 : 'text-gov-sand-700 hover:bg-[#faf8f2]'
-            }`}
+              }`}
           >
             Reports ({reports.length})
           </button>
           <button
             onClick={() => setActiveTab('instruments')}
-            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-              activeTab === 'instruments'
+            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${activeTab === 'instruments'
                 ? 'bg-[#006c51] text-white'
                 : 'text-gov-sand-700 hover:bg-[#faf8f2]'
-            }`}
+              }`}
           >
             Instruments ({instruments.length})
           </button>
@@ -408,9 +403,8 @@ export const NationalSearch: React.FC = () => {
                         <Link to={`/reports/${rpt.id}`} className="font-mono font-bold text-[#006c51] hover:underline">
                           {rpt.reportId}
                         </Link>
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
-                          rpt.status === 'FINALIZED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
+                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${rpt.status === 'FINALIZED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
                           {rpt.status}
                         </span>
                         <span className="text-[10px] font-mono text-gov-sand-500">v{rpt.version}</span>
@@ -473,9 +467,8 @@ export const NationalSearch: React.FC = () => {
                           {inst.passportId}
                         </Link>
                         <AccuracyClassBadge accuracyClass={inst.accuracyClass} />
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
-                          inst.status === 'CERTIFIED' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
+                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${inst.status === 'CERTIFIED' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
                           {inst.status}
                         </span>
                       </div>

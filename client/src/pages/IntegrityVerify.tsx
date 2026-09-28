@@ -274,7 +274,7 @@ export const IntegrityVerify: React.FC = () => {
             </div>
 
             <h2 className="text-xl sm:text-2xl font-bold font-serif tracking-wide uppercase">
-              {verification.verdict || (verification.verified ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original')}
+              {verification.verdict || (verification.verified ? 'Verified: Unaltered' : 'Warning: Content Does Not Match Original')}
             </h2>
             <p className="text-xs text-emerald-100 mt-1 max-w-lg mx-auto">
               {verification.reason}

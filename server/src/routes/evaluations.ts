@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../prisma';
 import { authenticateToken, requireRoles, AuthenticatedRequest } from '../middleware/auth';
+import { PassportService } from '../engine/passportService';
 
 const router = Router();
 
@@ -170,10 +171,13 @@ router.post('/', authenticateToken, requireRoles(['TESTING_OFFICER', 'ADMIN']), 
       orderBy: { createdAt: 'desc' },
     });
 
+    const passport = await PassportService.getOrCreatePassportForInstrument(prisma, instrumentId, req.user?.id);
+
     const evaluation = await prisma.evaluation.create({
       data: {
         evaluationNumber,
         instrumentId,
+        passportId: passport.id,
         laboratoryId,
         evaluationDate: evaluationDate ? new Date(evaluationDate) : new Date(),
         testingOfficerId: assignedTestingOfficerId,
@@ -197,6 +201,25 @@ router.post('/', authenticateToken, requireRoles(['TESTING_OFFICER', 'ADMIN']), 
         data: { status: 'IN_EVALUATION' },
       });
     }
+
+    // Record on Passport Event Log
+    await PassportService.recordEvent(
+      prisma,
+      passport.id,
+      'EVALUATION_CREATED',
+      'EVALUATION',
+      evaluation.id,
+      req.user!.id,
+      `Evaluation ${evaluationNumber} created (${evaluation.standardReference}) at ${laboratory.name}. Testing Officer: ${req.user!.name}.`,
+      {
+        evaluationNumber,
+        laboratory: laboratory.name,
+        standardReference: evaluation.standardReference,
+        ruleVersion: activeRuleConfig?.version || '1.0.0',
+        ruleConfigId: activeRuleConfig?.id || null,
+        state,
+      }
+    );
 
     // Log to Digital Passport timeline
     await prisma.timelineEvent.create({
@@ -289,6 +312,47 @@ router.patch('/:id/state', authenticateToken, async (req: AuthenticatedRequest, 
         reviewingOfficer: true,
       },
     });
+
+    // Record Passport Events
+    try {
+      const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+      if (state === 'Under Review') {
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'SUBMITTED_FOR_REVIEW',
+          'EVALUATION',
+          evaluation.id,
+          req.user!.id,
+          `Evaluation ${evaluation.evaluationNumber} submitted for Reviewing Officer endorsement.`,
+          { evaluationNumber: evaluation.evaluationNumber, previousState, newState: state }
+        );
+      } else if (state === 'Completed') {
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'REVIEW_APPROVED',
+          'EVALUATION',
+          evaluation.id,
+          req.user!.id,
+          `Evaluation ${evaluation.evaluationNumber} approved and certified. Remarks: "${reviewRemarks || 'Approved'}".`,
+          { evaluationNumber: evaluation.evaluationNumber, remarks: reviewRemarks, status: 'CERTIFIED' }
+        );
+      } else if (previousState === 'Under Review' && (state === 'In Progress' || state === 'Draft')) {
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'REVIEW_RETURNED',
+          'EVALUATION',
+          evaluation.id,
+          req.user!.id,
+          `Evaluation ${evaluation.evaluationNumber} returned for revision. Remarks: "${reviewRemarks || 'Returned for adjustments'}".`,
+          { evaluationNumber: evaluation.evaluationNumber, remarks: reviewRemarks, previousState, newState: state }
+        );
+      }
+    } catch (passErr) {
+      console.warn('Failed to record passport event for state transition:', passErr);
+    }
 
     // Record state change in timeline
     await prisma.timelineEvent.create({

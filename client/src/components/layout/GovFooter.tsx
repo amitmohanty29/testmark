@@ -89,15 +89,15 @@ export const GovFooter: React.FC = () => {
             </ul>
           </div>
 
-          {/* Col 4: Problem Statement Context */}
-          <div className="space-y-2 bg-[#2c2820] p-3 rounded border border-gov-sand-800">
-            <div className="text-[11px] font-bold text-[#ff9933] uppercase tracking-wide">
-              Smart India Hackathon 2024
-            </div>
-            <div className="text-xs font-semibold text-white">Problem Statement SIH26035</div>
-            <p className="text-[11px] text-gov-sand-400 leading-normal">
-              Development of an Automated OIML R-76 Test Report Generation & Verifiable Digital Passport System for Non-Automatic Weighing Instruments.
-            </p>
+          {/* Col 4: Contact & Support */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-white">Contact & Support</h4>
+            <ul className="text-xs space-y-1.5 text-gov-sand-400">
+              <li>Helpdesk: lm-support@marksure.gov.in</li>
+              <li>Tel: 011-2338 1653 (Legal Metrology Division)</li>
+              <li>Krishi Bhawan, New Delhi 110001</li>
+              <li className="text-[11px] pt-1">Website content managed by Department of Consumer Affairs</li>
+            </ul>
           </div>
         </div>
 

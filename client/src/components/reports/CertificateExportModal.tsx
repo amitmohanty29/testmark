@@ -7,7 +7,6 @@ import {
   Globe2, 
   ShieldCheck, 
   Layers, 
-  Sparkles, 
   ExternalLink,
   Info,
   Check,
@@ -65,7 +64,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
         a2.click();
         document.body.removeChild(a2);
 
-        const msg = `Dual certificates (Indian RRSL & OIML CS) exported in .${fileFormat} format! Event recorded in Digital Passport ledger.`;
+        const msg = `Dual certificates (Indian RRSL and OIML CS) exported in .${fileFormat} format. Event recorded in Digital Passport ledger.`;
         setSuccessMsg(msg);
         if (onExportSuccess) onExportSuccess(msg);
       } else {
@@ -82,7 +81,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
           selectedTemplate === 'INDIAN_RRSL'
             ? 'Indian RRSL National Certificate'
             : 'OIML CS Scheme Type Evaluation Certificate';
-        const msg = `${templateName} (.${fileFormat}) successfully exported! Recorded on Instrument Passport timeline.`;
+        const msg = `${templateName} (.${fileFormat}) successfully exported. Recorded on Instrument Passport timeline.`;
         setSuccessMsg(msg);
         if (onExportSuccess) onExportSuccess(msg);
       }
@@ -95,27 +94,27 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#fcfbf9] rounded-lg border border-[#ded7c4] max-w-2xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
+      <div className="bg-[#fcfbf9] rounded border border-[#ded7c4] max-w-2xl w-full shadow-lg overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="bg-[#005a3c] text-white px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-emerald-700/80 rounded-md">
+            <div className="p-2 bg-emerald-700/80 rounded">
               <Award className="w-5 h-5 text-amber-300" />
             </div>
             <div>
               <h3 className="text-base font-bold font-serif tracking-wide">
-                Multi-National OIML CS Certificate Exporter
+                Certificate Exporter
               </h3>
               <p className="text-[11px] text-emerald-100">
-                Template-driven metrology certificate generator • Zero data re-entry
+                Official metrology certificate generator for approved jurisdictions
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-emerald-200 hover:text-white text-base font-bold px-2 py-1 rounded"
+            className="text-emerald-200 hover:text-white text-xs font-semibold px-2 py-1 rounded border border-emerald-600/50"
           >
-            ✕
+            Close
           </button>
         </div>
 
@@ -124,15 +123,15 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
           {/* Target Report Snapshot Banner */}
           <div className="p-3 bg-[#faf8f2] rounded border border-[#ded7c4] flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-mono uppercase text-gov-sand-500 block">Authoritative Report</span>
+              <span className="text-[10px] font-mono uppercase text-gov-sand-500 block">Report Ref. No.</span>
               <span className="font-mono font-bold text-gov-sand-900 text-xs">
                 {report.reportId} (Version {report.version})
               </span>
             </div>
             <div className="text-right">
-              <span className="text-[10px] font-mono uppercase text-gov-sand-500 block">Cryptographic Seal</span>
+              <span className="text-[10px] font-mono uppercase text-gov-sand-500 block">SHA-256 Hash</span>
               <span className="font-mono text-[10px] text-emerald-800 font-semibold truncate max-w-[200px] block" title={report.integrityHash || 'Pending'}>
-                {report.integrityHash ? `${report.integrityHash.substring(0, 16)}...` : 'Draft Hash'}
+                {report.integrityHash ? `${report.integrityHash.substring(0, 16)}...` : 'Pending finalization'}
               </span>
             </div>
           </div>
@@ -146,7 +145,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
               {/* Option 1: Indian RRSL */}
               <div
                 onClick={() => setSelectedTemplate('INDIAN_RRSL')}
-                className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                className={`p-3.5 rounded border-2 cursor-pointer transition-all flex flex-col justify-between ${
                   selectedTemplate === 'INDIAN_RRSL'
                     ? 'border-[#005a3c] bg-emerald-50/50 shadow-sm ring-1 ring-[#005a3c]'
                     : 'border-[#ded7c4] bg-white hover:bg-[#faf8f2]'
@@ -155,7 +154,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded font-mono">
-                      🇮🇳 India RRSL
+                      India RRSL
                     </span>
                     {selectedTemplate === 'INDIAN_RRSL' && (
                       <CheckCircle2 className="w-4 h-4 text-[#005a3c]" />
@@ -176,7 +175,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
               {/* Option 2: OIML CS Scheme */}
               <div
                 onClick={() => setSelectedTemplate('OIML_CS')}
-                className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                className={`p-3.5 rounded border-2 cursor-pointer transition-all flex flex-col justify-between ${
                   selectedTemplate === 'OIML_CS'
                     ? 'border-sky-700 bg-sky-50/50 shadow-sm ring-1 ring-sky-700'
                     : 'border-[#ded7c4] bg-white hover:bg-[#faf8f2]'
@@ -185,7 +184,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-sky-800 bg-sky-100 px-2 py-0.5 rounded font-mono">
-                      🌐 OIML CS Scheme
+                      OIML CS Scheme
                     </span>
                     {selectedTemplate === 'OIML_CS' && (
                       <CheckCircle2 className="w-4 h-4 text-sky-700" />
@@ -206,7 +205,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
               {/* Option 3: Both Formats */}
               <div
                 onClick={() => setSelectedTemplate('BOTH')}
-                className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                className={`p-3.5 rounded border-2 cursor-pointer transition-all flex flex-col justify-between ${
                   selectedTemplate === 'BOTH'
                     ? 'border-amber-700 bg-amber-50/50 shadow-sm ring-1 ring-amber-700'
                     : 'border-[#ded7c4] bg-white hover:bg-[#faf8f2]'
@@ -215,7 +214,7 @@ export const CertificateExportModal: React.FC<CertificateExportModalProps> = ({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-100 px-2 py-0.5 rounded font-mono">
-                      📦 Both Formats
+                      Dual Format
                     </span>
                     {selectedTemplate === 'BOTH' && (
                       <CheckCircle2 className="w-4 h-4 text-amber-700" />

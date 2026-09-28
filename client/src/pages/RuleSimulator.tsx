@@ -17,7 +17,6 @@ import {
   Scale, 
   Info,
   Clock,
-  Sparkles,
   FileCheck2,
   Lock
 } from 'lucide-react';
@@ -224,7 +223,7 @@ export const RuleSimulator: React.FC = () => {
               >
                 {ruleConfigs.map((r) => (
                   <option key={`base-${r.id}`} value={r.id}>
-                    {r.version} — {r.name} {r.isActive ? '(Active Official)' : ''}
+                    {r.version} : {r.name} {r.isActive ? '(Active Official)' : ''}
                   </option>
                 ))}
               </select>
@@ -245,7 +244,7 @@ export const RuleSimulator: React.FC = () => {
               >
                 {ruleConfigs.map((r) => (
                   <option key={`sim-${r.id}`} value={r.id}>
-                    {r.version} — {r.name} {r.isDraft ? '(Candidate Draft)' : ''}
+                    {r.version} : {r.name} {r.isDraft ? '(Candidate Draft)' : ''}
                   </option>
                 ))}
               </select>
@@ -454,9 +453,9 @@ export const RuleSimulator: React.FC = () => {
               </div>
               <button
                 onClick={() => setIsCreateConfigModalOpen(false)}
-                className="text-gov-sand-400 hover:text-gov-sand-600 text-sm font-bold"
+                className="text-gov-sand-500 hover:text-gov-sand-800 text-xs font-semibold px-2 py-0.5 rounded border border-gov-sand-300"
               >
-                ✕
+                Close
               </button>
             </div>
 

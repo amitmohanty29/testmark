@@ -9,6 +9,7 @@ import { MetrologyDiffEngine } from '../engine/metrologyDiffEngine';
 import { OimlComplianceEngine } from '../engine/complianceEngine';
 import { OimlCalculationEngine } from '../engine/calculationEngine';
 import { CertificateExportEngine, CertificateTemplateId, CERTIFICATE_TEMPLATES } from '../engine/certificateExportEngine';
+import { PassportService } from '../engine/passportService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -96,10 +97,13 @@ router.post('/generate/:evaluationId', authenticateToken, async (req: Authentica
 
     const reportDataStr = JSON.stringify(reportData);
 
+    const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+
     const report = await prisma.report.create({
       data: {
         reportId,
         evaluationId,
+        passportId: passport.id,
         ruleConfigId: evaluation.ruleConfigId,
         version: 1,
         status: 'DRAFT',
@@ -120,6 +124,26 @@ router.post('/generate/:evaluationId', authenticateToken, async (req: Authentica
         createdByName: req.user!.name,
       },
     });
+
+    try {
+      await PassportService.recordEvent(
+        prisma,
+        passport.id,
+        'REPORT_GENERATED',
+        'REPORT',
+        report.id,
+        req.user!.id,
+        `Verification report ${reportId} (v1) generated for evaluation ${evaluation.evaluationNumber}.`,
+        {
+          reportId,
+          version: 1,
+          evaluationNumber: evaluation.evaluationNumber,
+          ruleVersion: evaluation.ruleConfig?.version || '1.0.0',
+        }
+      );
+    } catch (passErr) {
+      console.warn('Failed to record passport event for report generation:', passErr);
+    }
 
     await logAudit({
       entityType: 'REPORT', entityId: report.id, action: 'CREATED',
@@ -447,6 +471,28 @@ router.post('/:id/revise', authenticateToken, async (req: AuthenticatedRequest, 
 
     // Surface revision event on the Instrument Digital Passport timeline
     if (eval_.instrumentId) {
+      try {
+        const passport = await PassportService.getOrCreatePassportForInstrument(prisma, eval_.instrumentId, req.user?.id);
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'REPORT_REVISED',
+          'REPORT',
+          report.id,
+          req.user!.id,
+          `Report ${report.reportId} revised to v${newVersion}. Reason: ${changeDescription.trim()}.`,
+          {
+            reportId: report.reportId,
+            previousVersion: report.version,
+            newVersion,
+            integrityHash: newHash,
+            reason: changeDescription.trim(),
+          }
+        );
+      } catch (passErr) {
+        console.warn('Failed to record passport event for report revision:', passErr);
+      }
+
       await prisma.timelineEvent.create({
         data: {
           instrumentId: eval_.instrumentId,
@@ -515,6 +561,32 @@ router.post('/:id/verify', async (req, res): Promise<void> => {
       description: `Report ${report.reportId} cryptographic verification: ${isValid ? 'Verified — Unaltered' : 'Warning — Content Does Not Match Original'}`,
       newState: { verified: isValid, reportId: report.reportId, checkTimestamp: new Date().toISOString() },
     });
+
+    // Record INTEGRITY_VERIFIED on PassportEvent
+    try {
+      const evaluation = await prisma.evaluation.findUnique({ where: { id: report.evaluationId } });
+      if (evaluation) {
+        const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId);
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'INTEGRITY_VERIFIED',
+          'REPORT',
+          report.id,
+          'PUBLIC_AUDITOR',
+          `Report ${report.reportId} integrity check: ${isValid ? 'Verified, unaltered' : 'Content does not match original'}.`,
+          {
+            reportId: report.reportId,
+            verified: isValid,
+            storedHash: report.integrityHash,
+            computedHash,
+            version: report.version,
+          }
+        );
+      }
+    } catch (passErr) {
+      console.warn('Failed to record passport event for integrity verification:', passErr);
+    }
 
     res.json({
       verified: isValid,
@@ -733,6 +805,25 @@ router.get('/:id/export/pdf', authenticateToken, async (req: AuthenticatedReques
       metadata: { version: targetReport.version },
     });
 
+    try {
+      const evaluation = await prisma.evaluation.findUnique({ where: { id: report.evaluationId } });
+      if (evaluation) {
+        const passport = await PassportService.getOrCreatePassportForInstrument(prisma, evaluation.instrumentId, req.user?.id);
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'CERTIFICATE_EXPORTED',
+          'REPORT',
+          report.id,
+          req.user!.id,
+          `Report ${report.reportId} (v${targetReport.version}) exported as PDF.`,
+          { reportId: report.reportId, version: targetReport.version, format: 'PDF' }
+        );
+      }
+    } catch (passErr) {
+      console.warn('Failed to record passport event for PDF export:', passErr);
+    }
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}_v${targetReport.version}.pdf"`);
     res.send(pdfBuffer);
@@ -813,6 +904,25 @@ router.get('/:id/export/docx', authenticateToken, async (req: AuthenticatedReque
       description: `Report ${report.reportId} (v${targetReport.version}) exported as DOCX`,
       metadata: { version: targetReport.version },
     });
+
+    try {
+      const eval_ = (report as any).evaluation;
+      if (eval_?.instrumentId) {
+        const passport = await PassportService.getOrCreatePassportForInstrument(prisma, eval_.instrumentId, req.user?.id);
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'CERTIFICATE_EXPORTED',
+          'REPORT',
+          report.id,
+          req.user!.id,
+          `Report ${report.reportId} (v${targetReport.version}) exported as DOCX.`,
+          { reportId: report.reportId, version: targetReport.version, format: 'DOCX' }
+        );
+      }
+    } catch (passErr) {
+      console.warn('Failed to record passport event for DOCX export:', passErr);
+    }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${report.reportId}_v${targetReport.version}.docx"`);
@@ -978,6 +1088,22 @@ router.get('/:id/export-certificate/:templateId', authenticateToken, async (req:
 
     // Record certificate generation in Instrument Digital Passport Timeline
     if (targetInstrument?.id) {
+      try {
+        const passport = await PassportService.getOrCreatePassportForInstrument(prisma, targetInstrument.id, req.user?.id);
+        await PassportService.recordEvent(
+          prisma,
+          passport.id,
+          'CERTIFICATE_EXPORTED',
+          'REPORT',
+          report.id,
+          req.user!.id,
+          `Certificate exported: ${template.name} (${format.toUpperCase()}) for Report ${report.reportId} (v${targetReport.version}).`,
+          { reportId: report.reportId, version: targetReport.version, format: format.toUpperCase(), templateId, templateName: template.name }
+        );
+      } catch (passErr) {
+        console.warn('Failed to record passport event for certificate export:', passErr);
+      }
+
       await prisma.timelineEvent.create({
         data: {
           instrumentId: targetInstrument.id,

@@ -2,15 +2,13 @@ import { Router, Response } from 'express';
 import prisma from '../prisma';
 import { authenticateToken, requireRoles, AuthenticatedRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
+import { PassportService } from '../engine/passportService';
 
 const router = Router();
 
-// Generate unique Passport ID: "IN-NAWI-2026-XXXX"
-const generatePassportId = async (): Promise<string> => {
-  const currentYear = new Date().getFullYear();
-  const count = await prisma.instrument.count();
-  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-  return `IN-NAWI-${currentYear}-${(count + 1).toString().padStart(4, '0')}-${randomSuffix.toString().slice(-2)}`;
+// Generate unique Passport ID: "DOCA-NAWI-P-000123"
+const generatePassportId = async (tx?: any): Promise<string> => {
+  return await PassportService.generatePassportId(tx);
 };
 
 // List instruments with optional search and filters
@@ -214,45 +212,81 @@ router.post('/', authenticateToken, requireRoles(['TESTING_OFFICER', 'ADMIN']), 
       return;
     }
 
-    const passportId = await generatePassportId();
+    const result = await prisma.$transaction(async (tx) => {
+      const passportId = await PassportService.generatePassportId(tx);
 
-    const instrument = await prisma.instrument.create({
-      data: {
-        passportId,
-        manufacturer: manufacturer.trim(),
-        model: model.trim(),
-        serialNumber: serialNumber.trim(),
-        instrumentType: instrumentType.trim(),
-        accuracyClass: accuracyClass.trim(),
-        maxCapacity: maxVal,
-        minCapacity: minVal,
-        scaleIntervalE: eVal,
-        scaleIntervalD: scaleIntervalD ? parseFloat(scaleIntervalD) : null,
-        verificationUnits: verificationUnits || 'g',
-        capacityRangeType: capacityRangeType || 'Single-Interval',
-        tareRange: tareRange?.trim() || null,
-        temperatureRange: temperatureRange?.trim() || '+10°C to +40°C',
-        powerSupply: powerSupply?.trim() || '230V AC, 50Hz / Battery backup',
-        technicalSpecs: technicalSpecs ? (typeof technicalSpecs === 'object' ? JSON.stringify(technicalSpecs) : technicalSpecs) : null,
-        createdById: req.user!.id,
-      },
-    });
+      const instrument = await tx.instrument.create({
+        data: {
+          passportId,
+          manufacturer: manufacturer.trim(),
+          model: model.trim(),
+          serialNumber: serialNumber.trim(),
+          instrumentType: instrumentType.trim(),
+          accuracyClass: accuracyClass.trim(),
+          maxCapacity: maxVal,
+          minCapacity: minVal,
+          scaleIntervalE: eVal,
+          scaleIntervalD: scaleIntervalD ? parseFloat(scaleIntervalD) : null,
+          verificationUnits: verificationUnits || 'g',
+          capacityRangeType: capacityRangeType || 'Single-Interval',
+          tareRange: tareRange?.trim() || null,
+          temperatureRange: temperatureRange?.trim() || '+10°C to +40°C',
+          powerSupply: powerSupply?.trim() || '230V AC, 50Hz / Battery backup',
+          technicalSpecs: technicalSpecs ? (typeof technicalSpecs === 'object' ? JSON.stringify(technicalSpecs) : technicalSpecs) : null,
+          createdById: req.user!.id,
+        },
+      });
 
-    // Record initial Passport Creation in timeline
-    await prisma.timelineEvent.create({
-      data: {
-        instrumentId: instrument.id,
-        eventType: 'PASSPORT_CREATED',
-        title: 'Digital Metrology Passport Initialized',
-        description: `Instrument profile registered under OIML R-76 framework. Assigned permanent Passport ID: ${passportId}.`,
-        officerName: req.user!.name,
-        officerRole: req.user!.role,
-      },
+      // Create permanent Passport record
+      const passport = await tx.passport.create({
+        data: {
+          passportId,
+          instrumentId: instrument.id,
+          createdBy: req.user!.id,
+        },
+      });
+
+      // Append REGISTERED PassportEvent
+      await PassportService.recordEvent(
+        tx,
+        passport.id,
+        'REGISTERED',
+        'INSTRUMENT',
+        instrument.id,
+        req.user!.id,
+        `Instrument registered: ${instrument.manufacturer} ${instrument.model} (S/N: ${instrument.serialNumber}) with Class ${instrument.accuracyClass}.`,
+        {
+          manufacturer: instrument.manufacturer,
+          model: instrument.model,
+          serialNumber: instrument.serialNumber,
+          instrumentType: instrument.instrumentType,
+          accuracyClass: instrument.accuracyClass,
+          maxCapacity: instrument.maxCapacity,
+          minCapacity: instrument.minCapacity,
+          scaleIntervalE: instrument.scaleIntervalE,
+          verificationUnits: instrument.verificationUnits,
+        }
+      );
+
+      // Record in legacy timeline for backwards compatibility
+      await tx.timelineEvent.create({
+        data: {
+          instrumentId: instrument.id,
+          eventType: 'PASSPORT_CREATED',
+          title: 'Digital Metrology Passport Initialized',
+          description: `Instrument profile registered under OIML R-76 framework. Assigned permanent Passport ID: ${passportId}.`,
+          officerName: req.user!.name,
+          officerRole: req.user!.role,
+        },
+      });
+
+      return { instrument, passport };
     });
 
     res.status(201).json({
-      instrument,
-      message: `Instrument registered successfully with Passport ID ${passportId}`,
+      instrument: result.instrument,
+      passport: result.passport,
+      message: `Instrument registered successfully with Passport ID ${result.instrument.passportId}`,
     });
   } catch (error: any) {
     console.error('Create instrument error:', error);
@@ -360,6 +394,8 @@ router.post('/:id/documents', authenticateToken, upload.single('file'), async (r
       return;
     }
 
+    const passport = await PassportService.getOrCreatePassportForInstrument(prisma, id, req.user?.id);
+
     const document = await prisma.instrumentDocument.create({
       data: {
         title: title?.trim() || fileName,
@@ -368,8 +404,27 @@ router.post('/:id/documents', authenticateToken, upload.single('file'), async (r
         fileType,
         fileSize,
         instrumentId: id,
+        passportId: passport.id,
       },
     });
+
+    // Record on Passport Event Log
+    await PassportService.recordEvent(
+      prisma,
+      passport.id,
+      'DOCUMENT_ADDED',
+      'DOCUMENT',
+      document.id,
+      req.user!.id,
+      `Technical document attached: ${document.title} (${fileName}).`,
+      {
+        title: document.title,
+        fileName: document.fileName,
+        fileUrl: document.fileUrl,
+        fileType: document.fileType,
+        fileSize: document.fileSize,
+      }
+    );
 
     // Record on timeline
     await prisma.timelineEvent.create({

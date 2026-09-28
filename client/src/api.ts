@@ -76,11 +76,102 @@ export const api = {
   },
 
   async getInstrumentPassport(id: string): Promise<{ passport: PassportData }> {
+    try {
+      const res = await fetch(`${API_BASE}/passports/${id}`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+    } catch (e) {
+      // Fall through to legacy endpoint
+    }
+
     const res = await fetch(`${API_BASE}/instruments/${id}/passport`, {
       headers: getAuthHeaders(),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to fetch Instrument Digital Passport');
+    return data;
+  },
+
+  async getPassports(params?: {
+    q?: string;
+    passportId?: string;
+    serialNumber?: string;
+    manufacturer?: string;
+    model?: string;
+    instrumentType?: string;
+    accuracyClass?: string;
+    complianceStatus?: string;
+    result?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ passports: any[]; totalCount: number }> {
+    const query = new URLSearchParams();
+    if (params?.q) query.append('q', params.q);
+    if (params?.passportId) query.append('passportId', params.passportId);
+    if (params?.serialNumber) query.append('serialNumber', params.serialNumber);
+    if (params?.manufacturer) query.append('manufacturer', params.manufacturer);
+    if (params?.model) query.append('model', params.model);
+    if (params?.instrumentType && params.instrumentType !== 'ALL') query.append('instrumentType', params.instrumentType);
+    if (params?.accuracyClass && params.accuracyClass !== 'ALL') query.append('accuracyClass', params.accuracyClass);
+    if (params?.complianceStatus && params.complianceStatus !== 'ALL') query.append('complianceStatus', params.complianceStatus);
+    if (params?.result && params.result !== 'ALL') query.append('result', params.result);
+    if (params?.startDate) query.append('startDate', params.startDate);
+    if (params?.endDate) query.append('endDate', params.endDate);
+
+    const res = await fetch(`${API_BASE}/passports?${query.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to fetch passports');
+    return data;
+  },
+
+  async getPassportModelsSummary(): Promise<{ models: any[]; totalModels: number }> {
+    const res = await fetch(`${API_BASE}/passports/models/summary`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to fetch models approval summary');
+    return data;
+  },
+
+  async getPassport(id: string): Promise<{ passport: any }> {
+    const res = await fetch(`${API_BASE}/passports/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to fetch Digital Passport record');
+    return data;
+  },
+
+  getPassportExportUrl(id: string, format: 'pdf' | 'json' = 'pdf'): string {
+    const token = localStorage.getItem('marksure_token');
+    return `${API_BASE}/passports/${id}/export?format=${format}&token=${token || ''}`;
+  },
+
+  getPassportSummaryUrl(id: string): string {
+    const token = localStorage.getItem('marksure_token');
+    return `${API_BASE}/passports/${id}/print-summary?token=${token || ''}`;
+  },
+
+  async recordPassportRecalibration(id: string, recalData: {
+    calibrationDate: string;
+    certificateNumber?: string;
+    laboratoryName?: string;
+    nextDueDate?: string;
+    remarks?: string;
+  }): Promise<{ event: any; message: string }> {
+    const res = await fetch(`${API_BASE}/passports/${id}/recalibration`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(recalData),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to record recalibration event');
     return data;
   },
 
